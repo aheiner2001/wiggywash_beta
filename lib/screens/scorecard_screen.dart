@@ -288,10 +288,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 120),
                   children: [
-                    _MyTotalsCard(employeeName: widget.profile.name),
                     if (Store.instance.challenge != null) ...[
-                      const SizedBox(height: 8),
                       const ChallengeCard(),
+                      const SizedBox(height: 8),
                     ],
                     if (Store.instance.seeAll) ...[
                       const SizedBox(height: 8),
@@ -763,66 +762,6 @@ class _SaveStatus extends StatelessWidget {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: child,
-    );
-  }
-}
-
-/// Top-of-page card showing the employee's own submitted totals for today.
-/// Tapping it opens their personal report list.
-class _MyTotalsCard extends StatelessWidget {
-  const _MyTotalsCard({required this.employeeName});
-  final String employeeName;
-
-  bool _isToday(DateTime d) {
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mine = Store.instance.submissions.where((s) =>
-        _isToday(s.submittedAt) &&
-        s.employeeName.toLowerCase() == employeeName.toLowerCase());
-    final revenue = mine.fold(0.0, (s, e) => s + e.grandTotalRevenue);
-    final members = mine.fold(0, (s, e) => s + e.totalMemberships);
-    final singles = mine.fold(0, (s, e) => s + e.totalSingleWashes);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.card),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) =>
-              ReportsScreen(title: 'My reports', filterName: employeeName),
-        ),
-      ),
-      child: AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Your total today', style: TextStyles.caption),
-                  const SizedBox(height: 4),
-                  Text(_money.format(revenue),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.success,
-                      )),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$members members • $singles singles',
-                    style: TextStyles.caption,
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-          ],
-        ),
-      ),
     );
   }
 }
