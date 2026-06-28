@@ -1,26 +1,26 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
-import 'models/profile.dart';
+import 'screens/manager_auth_screen.dart';
 import 'screens/manager_screen.dart';
-import 'screens/onboarding_screen.dart';
 import 'screens/scorecard_screen.dart';
+import 'screens/site_code_screen.dart';
+import 'screens/super_admin_screen.dart';
 import 'services/store.dart';
 import 'theme.dart';
+import 'widgets/brand_header.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Connect to Firebase for cross-device sync. If it's unreachable for any
-  // reason, the app still runs in local-only mode (see Store).
+  // Connect to Firebase. Employees use a silent anonymous session; managers use
+  // Google. If Firebase can't initialize the app still boots.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    await FirebaseAuth.instance.signInAnonymously();
   } catch (e) {
-    debugPrint('Firebase unavailable — falling back to local storage: $e');
+    debugPrint('Firebase unavailable: $e');
   }
   await Store.instance.init();
   runApp(const WiggyWashApp());
@@ -40,8 +40,7 @@ class WiggyWashApp extends StatelessWidget {
   }
 }
 
-/// Routes to onboarding / employee scorecard / manager dashboard based on the
-/// saved profile, rebuilding whenever the profile changes.
+/// Routes by the Store's current view, rebuilding on every change.
 class _Root extends StatelessWidget {
   const _Root();
 
@@ -50,15 +49,46 @@ class _Root extends StatelessWidget {
     return AnimatedBuilder(
       animation: Store.instance,
       builder: (context, _) {
-        final profile = Store.instance.profile;
-        if (profile == null || profile.name.isEmpty) {
-          return const OnboardingScreen();
+        final store = Store.instance;
+        switch (store.view) {
+          case AppView.loading:
+            return const _Splash();
+          case AppView.landing:
+            return const SiteCodeScreen();
+          case AppView.managerAuth:
+            return const ManagerAuthScreen();
+          case AppView.employee:
+            return ScorecardScreen(profile: store.profile!);
+          case AppView.manager:
+            return const ManagerScreen();
+          case AppView.superAdmin:
+            return const SuperAdminScreen();
         }
-        return switch (profile.role) {
-          UserRole.manager => const ManagerScreen(),
-          UserRole.employee => ScorecardScreen(profile: profile),
-        };
       },
+    );
+  }
+}
+
+class _Splash extends StatelessWidget {
+  const _Splash();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BrandHeader(),
+            SizedBox(height: 28),
+            SizedBox(
+              height: 28,
+              width: 28,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

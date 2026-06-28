@@ -34,7 +34,12 @@ class ReportsScreen extends StatelessWidget {
       body: AnimatedBuilder(
         animation: Store.instance,
         builder: (context, _) {
-          final subs = Store.instance.submissions.where((s) {
+          // Team view shows approved scorecards only; a personal view (filtered
+          // to one name) shows that person's own saved cards, pending included.
+          final source = filterName == null
+              ? Store.instance.approvedSubmissions
+              : Store.instance.submissions;
+          final subs = source.where((s) {
             if (!_isToday(s.submittedAt)) return false;
             if (filterName == null) return true;
             return s.employeeName.toLowerCase() == filterName!.toLowerCase();
@@ -212,7 +217,7 @@ class _FullBreakdown extends StatelessWidget {
                 color: AppColors.navy,
               )),
           children: [
-            for (final section in WashSection.values) ...[
+            for (final section in Store.instance.enabledSections) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(

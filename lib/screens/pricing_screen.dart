@@ -5,6 +5,7 @@ import '../models/scorecard_config.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../widgets/store_message.dart';
+import 'line_items_screen.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 
@@ -121,7 +122,32 @@ class PricingScreen extends StatelessWidget {
                     style: TextStyles.caption,
                   ),
                   const SizedBox(height: 12),
-                  for (final section in WashSection.values) ...[
+                  const _SectionVisibilityCard(),
+                  const SizedBox(height: 14),
+                  AppCard(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const LineItemsScreen(),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.tune_rounded, color: AppColors.navy),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Add, hide & reorder items',
+                            style: TextStyles.subheading,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textMuted),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  for (final section in orderedSections()) ...[
                     SectionPill(section.title),
                     const SizedBox(height: 4),
                     AppCard(
@@ -144,6 +170,55 @@ class PricingScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Per-location toggles for which scorecard sections are in use. Disabled
+/// sections disappear from employees' scorecards (e.g. sites without a shop).
+class _SectionVisibilityCard extends StatelessWidget {
+  const _SectionVisibilityCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Store.instance,
+      builder: (context, _) {
+        return AppCard(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: Text('Sections in use at this location',
+                    style: TextStyles.subheading),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(right: 8, top: 2, bottom: 4),
+                child: Text(
+                  'Turn off any section this site doesn\'t sell — employees '
+                  'won\'t see it on their scorecard.',
+                  style: TextStyles.caption,
+                ),
+              ),
+              for (final section in WashSection.values)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(section.title),
+                  value: Store.instance.isSectionEnabled(section),
+                  onChanged: (v) async {
+                    final err =
+                        await Store.instance.setSectionEnabled(section, v);
+                    if (context.mounted && err != null) {
+                      showStoreMessage(context, err, error: true);
+                    }
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

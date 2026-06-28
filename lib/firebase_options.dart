@@ -50,19 +50,20 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBuumGtk282RTRFTZzCYmXJvA7ZKis71IU',
-    appId: '1:1090483978663:web:9aa595b839d53080ce7682',
-    messagingSenderId: '1090483978663',
-    projectId: 'wiggy-wash-stats',
-    authDomain: 'wiggy-wash-stats.firebaseapp.com',
-    storageBucket: 'wiggy-wash-stats.firebasestorage.app',
+    apiKey: 'AIzaSyA8rn4SbPBaHTH58YeHyKn4St5Obsq-Yq0',
+    appId: '1:242130286253:web:5e57ccab0e24eceb263824',
+    messagingSenderId: '242130286253',
+    projectId: 'wiggywash-expanded',
+    authDomain: 'wiggywash-expanded.firebaseapp.com',
+    storageBucket: 'wiggywash-expanded.firebasestorage.app',
+    measurementId: 'G-C4QD8VQKVZ',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBwoiIiKx5xEad6fVFX9o4SqZ3mmP96cF8',
-    appId: '1:1090483978663:android:15ee7c2e233ac842ce7682',
-    messagingSenderId: '1090483978663',
-    projectId: 'wiggy-wash-stats',
-    storageBucket: 'wiggy-wash-stats.firebasestorage.app',
+    apiKey: 'AIzaSyCWIlAe8jl4h5zh7gIkLTRF3AxY-llSkd4',
+    appId: '1:242130286253:android:37f9e3e10c99d2af263824',
+    messagingSenderId: '242130286253',
+    projectId: 'wiggywash-expanded',
+    storageBucket: 'wiggywash-expanded.firebasestorage.app',
   );
 }

@@ -17,7 +17,17 @@ class AppColors {
   static const textMuted = Color(0xFF74808F);
   static const hairline = Color(0xFFE2E7EF);
   static const success = Color(0xFF2E7D52);
+  static const warning = Color(0xFFE8A33D);
   static const danger = Color(0xFFB00020);
+}
+
+/// Maps a BA actual vs. goal to a status color: green = met, amber = close
+/// (within 75% of goal), red = below. Navy when no goal is set.
+Color baColor(double actual, double goal) {
+  if (goal <= 0) return AppColors.navy;
+  if (actual >= goal) return AppColors.success;
+  if (actual >= goal * 0.75) return AppColors.warning;
+  return AppColors.danger;
 }
 
 class AppRadius {

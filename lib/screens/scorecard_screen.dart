@@ -1,17 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/profile.dart';
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../widgets/challenge_card.dart';
 import '../widgets/profile_menu.dart';
+import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
+import '../widgets/ui_kit.dart';
 import 'help_screen.dart';
 import 'reports_screen.dart';
-import 'summary_screen.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 
@@ -27,16 +31,42 @@ class ScorecardScreen extends StatefulWidget {
 class _ScorecardScreenState extends State<ScorecardScreen> {
   final _baGoal = TextEditingController(text: '40');
   final Map<String, int> _counts = {for (final i in kLineItems) i.id: 0};
+  int _talkedTo = 0;
+
+  // Last values persisted to the database, used to detect unsaved changes.
+  final Map<String, int> _savedCounts = {for (final i in kLineItems) i.id: 0};
+  double _savedBaGoal = 40;
+  int _savedTalkedTo = 0;
+
+  bool _saving = false;
+  bool _hasSavedBefore = false;
+  bool _showSavedFlash = false;
+  bool _seeded = false;
+  bool _hadDraft = false;
+  Timer? _flashTimer;
+
+  /// Deterministic id so every Save during a shift updates the *same* running
+  /// record for this employee on this day (instead of creating duplicates).
+  String get _todayId {
+    final d = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final slug = widget.profile.name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    return 'shift-${d.year}${two(d.month)}${two(d.day)}-$slug';
+  }
 
   @override
   void initState() {
     super.initState();
-    _restoreDraft();
+    _hadDraft = _restoreDraft();
+    _seed();
+    if (!_seeded) Store.instance.addListener(_seedWhenReady);
   }
 
-  void _restoreDraft() {
+  bool _restoreDraft() {
     final draft = Store.instance.loadDraft(widget.profile.name);
-    if (draft == null) return;
+    if (draft == null) return false;
     final counts = (draft['counts'] as Map?) ?? {};
     for (final entry in counts.entries) {
       final id = entry.key as String;
@@ -46,10 +76,54 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     }
     final goal = draft['baGoal'];
     if (goal != null) {
-      _baGoal.text = (goal as num) == (goal).roundToDouble()
-          ? goal.toStringAsFixed(0)
-          : goal.toString();
+      _baGoal.text = _fmtGoal((goal as num).toDouble());
     }
+    _talkedTo = (draft['talkedTo'] as num?)?.toInt() ?? 0;
+    return true;
+  }
+
+  static String _fmtGoal(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+
+  Submission? _todayRecord() {
+    for (final s in Store.instance.submissions) {
+      if (s.id == _todayId) return s;
+    }
+    return null;
+  }
+
+  /// Seeds the "saved" baseline (and, if there's no local draft, the on-screen
+  /// numbers) from today's existing record so the running total continues.
+  void _seed() {
+    final rec = _todayRecord();
+    if (rec != null) {
+      for (final i in kLineItems) {
+        _savedCounts[i.id] = rec.countOf(i.id);
+      }
+      _savedBaGoal = rec.baGoal;
+      _savedTalkedTo = rec.talkedTo;
+      _hasSavedBefore = true;
+      if (!_hadDraft) {
+        for (final i in kLineItems) {
+          _counts[i.id] = rec.countOf(i.id);
+        }
+        _baGoal.text = _fmtGoal(rec.baGoal);
+        _talkedTo = rec.talkedTo;
+      }
+      _seeded = true;
+    } else if (!Store.instance.submissionsLoading) {
+      // No record and data has loaded: baseline is the (empty) defaults.
+      _seeded = true;
+    }
+  }
+
+  void _seedWhenReady() {
+    if (_seeded) {
+      Store.instance.removeListener(_seedWhenReady);
+      return;
+    }
+    setState(_seed);
+    if (_seeded) Store.instance.removeListener(_seedWhenReady);
   }
 
   void _persistDraft() {
@@ -57,13 +131,26 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
       widget.profile.name,
       counts: Map.of(_counts),
       baGoal: double.tryParse(_baGoal.text.trim()) ?? 0,
+      talkedTo: _talkedTo,
     );
   }
 
   @override
   void dispose() {
+    _flashTimer?.cancel();
+    Store.instance.removeListener(_seedWhenReady);
     _baGoal.dispose();
     super.dispose();
+  }
+
+  bool get _dirty {
+    final goal = double.tryParse(_baGoal.text.trim()) ?? 0;
+    if (goal != _savedBaGoal) return true;
+    if (_talkedTo != _savedTalkedTo) return true;
+    for (final i in kLineItems) {
+      if ((_counts[i.id] ?? 0) != (_savedCounts[i.id] ?? 0)) return true;
+    }
+    return false;
   }
 
   Submission get _live => Submission(
@@ -72,9 +159,10 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
         baGoal: double.tryParse(_baGoal.text.trim()) ?? 0,
         counts: Map.of(_counts),
         submittedAt: DateTime.now(),
+        talkedTo: _talkedTo,
       );
 
-  bool get _hasAnyTally => _counts.values.any((c) => c > 0);
+  bool get _hasAnyTally => _talkedTo > 0 || _counts.values.any((c) => c > 0);
 
   void _set(String id, int value) {
     setState(() => _counts[id] = value);
@@ -104,32 +192,66 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
         for (final i in kLineItems) {
           _counts[i.id] = 0;
         }
+        _talkedTo = 0;
       });
       await Store.instance.clearDraft(widget.profile.name);
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _save() async {
+    if (_saving || !_dirty) return;
+    setState(() => _saving = true);
+    final goal = double.tryParse(_baGoal.text.trim()) ?? 0;
     final submission = Submission(
-      id: const Uuid().v4(),
+      id: _todayId,
       employeeName: widget.profile.name,
-      baGoal: double.tryParse(_baGoal.text.trim()) ?? 0,
+      baGoal: goal,
       counts: Map.of(_counts),
       submittedAt: DateTime.now(),
+      talkedTo: _talkedTo,
     );
-    await Store.instance.addSubmission(submission);
-    await Store.instance.clearDraft(widget.profile.name);
+    try {
+      await Store.instance.addSubmission(submission);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showStoreMessage(context, 'Could not save. Check your connection.',
+          error: true);
+      return;
+    }
     if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SummaryScreen(submission: submission),
-      ),
-    );
     setState(() {
       for (final i in kLineItems) {
-        _counts[i.id] = 0;
+        _savedCounts[i.id] = _counts[i.id] ?? 0;
       }
+      _savedBaGoal = goal;
+      _savedTalkedTo = _talkedTo;
+      _saving = false;
+      _seeded = true;
+      _hasSavedBefore = true;
+      _showSavedFlash = true;
     });
+    _persistDraft();
+    _flashTimer?.cancel();
+    _flashTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showSavedFlash = false);
+    });
+  }
+
+  void _shareToBaChat() {
+    final s = _live;
+    final text = (StringBuffer()
+          ..writeln('🚗 WIGGY WASH — Scorecard')
+          ..writeln(widget.profile.name)
+          ..writeln('')
+          ..writeln('Memberships: ${s.totalMemberships}')
+          ..writeln('Single washes: ${s.totalSingleWashes}')
+          ..writeln('Shop sales: ${s.totalShopSales}')
+          ..writeln(
+              'BA: ${s.conversionRate.toStringAsFixed(0)}% (goal ${s.baGoal.toStringAsFixed(0)}%)')
+          ..writeln('Total revenue: ${_money.format(s.grandTotalRevenue)}'))
+        .toString();
+    Share.share(text);
   }
 
   @override
@@ -167,6 +289,10 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 120),
                   children: [
                     _MyTotalsCard(employeeName: widget.profile.name),
+                    if (Store.instance.challenge != null) ...[
+                      const SizedBox(height: 8),
+                      const ChallengeCard(),
+                    ],
                     if (Store.instance.seeAll) ...[
                       const SizedBox(height: 8),
                       _TeamButton(),
@@ -182,9 +308,25 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                       },
                     ),
                     const SizedBox(height: 8),
+                    _TalkedToCard(
+                      value: _talkedTo,
+                      onChanged: (v) {
+                        setState(() => _talkedTo = v < 0 ? 0 : v);
+                        _persistDraft();
+                      },
+                    ),
+                    const SizedBox(height: 8),
                     ..._buildSections(),
                     const SizedBox(height: 12),
                     _SummaryCard(live: live),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _hasAnyTally ? _shareToBaChat : null,
+                        icon: const Icon(Icons.ios_share_rounded, size: 18),
+                        label: const Text('Share to BA chat'),
+                      ),
+                    ),
                   ],
                 );
               },
@@ -193,11 +335,33 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
         ),
       ),
       bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        child: ElevatedButton.icon(
-          onPressed: _hasAnyTally ? _submit : null,
-          icon: const Icon(Icons.send_rounded),
-          label: const Text('Submit Shift'),
+        minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SaveStatus(
+              saving: _saving,
+              dirty: _dirty,
+              showFlash: _showSavedFlash,
+              hasSavedBefore: _hasSavedBefore,
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (_dirty && !_saving) ? _save : null,
+                icon: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save_rounded),
+                label: Text(_saving ? 'Saving…' : 'Save'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -205,7 +369,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
 
   List<Widget> _buildSections() {
     final widgets = <Widget>[];
-    for (final section in WashSection.values) {
+    for (final section in Store.instance.enabledSections) {
       widgets.add(SectionPill(section.title));
       for (final item in itemsFor(section)) {
         widgets.add(
@@ -303,26 +467,76 @@ class _HeaderCard extends StatelessWidget {
                   children: [
                     const Text('BA Actual', style: TextStyles.caption),
                     const SizedBox(height: 2),
-                    Container(
-                      height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.blue,
-                        borderRadius: BorderRadius.circular(AppRadius.field),
-                      ),
-                      child: Text(
-                        '${live.conversionRate.toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.navyDark,
+                    Builder(builder: (context) {
+                      final hasGoal = live.baGoal > 0;
+                      final boxColor = hasGoal
+                          ? baColor(live.businessAverage, live.baGoal)
+                          : AppColors.blue;
+                      return Container(
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: boxColor,
+                          borderRadius: BorderRadius.circular(AppRadius.field),
                         ),
-                      ),
-                    ),
+                        child: Text(
+                          '${live.businessAverage.toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: hasGoal ? Colors.white : AppColors.navyDark,
+                          ),
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Big tally for cars talked to — the denominator for business average.
+class _TalkedToCard extends StatelessWidget {
+  const _TalkedToCard({required this.value, required this.onChanged});
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Cars talked to', style: TextStyles.subheading),
+                const Text('Counts toward your business average',
+                    style: TextStyles.caption),
+                const SizedBox(height: 4),
+                Text('$value',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.navy,
+                    )),
+              ],
+            ),
+          ),
+          IconButton.filledTonal(
+            onPressed: value > 0 ? () => onChanged(value - 1) : null,
+            icon: const Icon(Icons.remove_rounded),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            onPressed: () => onChanged(value + 1),
+            icon: const Icon(Icons.add_rounded),
           ),
         ],
       ),
@@ -343,13 +557,15 @@ class _SummaryCard extends StatelessWidget {
         children: [
           const Text('Shift Summary', style: TextStyles.subheading),
           const SizedBox(height: 14),
+          _StatRow(label: 'Cars talked to', value: '${live.talkedTo}'),
           _StatRow(label: 'Memberships', value: '${live.totalMemberships}'),
           _StatRow(label: 'Single washes', value: '${live.totalSingleWashes}'),
           _StatRow(label: 'Shop sales', value: '${live.totalShopSales}'),
           _StatRow(
-            label: 'Conversion (BA)',
-            value: '${live.conversionRate.toStringAsFixed(0)}%',
+            label: 'Business average (BA)',
+            value: '${live.businessAverage.toStringAsFixed(0)}%',
           ),
+          _StatRow(label: 'Overall score', value: '${live.overallScore}'),
           const Divider(height: 26),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -359,8 +575,9 @@ class _SummaryCard extends StatelessWidget {
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   )),
-              Text(
-                _money.format(live.grandTotalRevenue),
+              AnimatedCount(
+                value: live.grandTotalRevenue,
+                format: _money.format,
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
@@ -400,6 +617,75 @@ class _StatRow extends StatelessWidget {
   }
 }
 
+/// Inline save-state indicator shown just above the Save button. Animates
+/// between "Unsaved changes", a brief "Saved to database" flash, and a
+/// persistent "Saved" checkmark.
+class _SaveStatus extends StatelessWidget {
+  const _SaveStatus({
+    required this.saving,
+    required this.dirty,
+    required this.showFlash,
+    required this.hasSavedBefore,
+  });
+
+  final bool saving;
+  final bool dirty;
+  final bool showFlash;
+  final bool hasSavedBefore;
+
+  Widget _row(String key, IconData? icon, String text, Color color,
+      {bool spinner = false, bool bold = false}) {
+    return Row(
+      key: ValueKey(key),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (spinner)
+          SizedBox(
+            height: 14,
+            width: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          )
+        else if (icon != null)
+          Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: TextStyle(
+            color: color,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget child;
+    if (saving) {
+      child = _row('saving', null, 'Saving…', AppColors.textMuted,
+          spinner: true);
+    } else if (dirty) {
+      child = _row('dirty', Icons.cloud_off_rounded, 'Unsaved changes',
+          AppColors.warning);
+    } else if (showFlash) {
+      child = _row('flash', Icons.check_circle_rounded, 'Saved to database',
+          AppColors.success,
+          bold: true);
+    } else if (hasSavedBefore) {
+      child = _row('saved', Icons.check_circle_rounded, 'Saved',
+          AppColors.success);
+    } else {
+      child = const SizedBox(key: ValueKey('none'), height: 16);
+    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: child,
+    );
+  }
+}
+
 /// Top-of-page card showing the employee's own submitted totals for today.
 /// Tapping it opens their personal report list.
 class _MyTotalsCard extends StatelessWidget {
@@ -419,7 +705,6 @@ class _MyTotalsCard extends StatelessWidget {
     final revenue = mine.fold(0.0, (s, e) => s + e.grandTotalRevenue);
     final members = mine.fold(0, (s, e) => s + e.totalMemberships);
     final singles = mine.fold(0, (s, e) => s + e.totalSingleWashes);
-    final shifts = mine.length;
 
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.card),
@@ -447,7 +732,7 @@ class _MyTotalsCard extends StatelessWidget {
                       )),
                   const SizedBox(height: 2),
                   Text(
-                    '$members members • $singles singles • $shifts shift(s)',
+                    '$members members • $singles singles',
                     style: TextStyles.caption,
                   ),
                 ],

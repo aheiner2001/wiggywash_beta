@@ -8,6 +8,12 @@ class Submission {
     required this.baGoal,
     required this.counts,
     required this.submittedAt,
+    this.talkedTo = 0,
+    this.approved = false,
+    this.approvedBy,
+    this.approvedAt,
+    this.editedBy,
+    this.editedAt,
   });
 
   final String id;
@@ -19,6 +25,20 @@ class Submission {
   /// Map of line-item id -> tally count.
   final Map<String, int> counts;
   final DateTime submittedAt;
+
+  /// Cars the employee talked to — the denominator for business average / BA%.
+  final int talkedTo;
+
+  /// Approval workflow: a scorecard is pending until a manager approves it.
+  final bool approved;
+  final String? approvedBy;
+  final DateTime? approvedAt;
+
+  /// Audit trail: set when a manager edits the submission after the fact.
+  final String? editedBy;
+  final DateTime? editedAt;
+
+  bool get wasEdited => editedAt != null;
 
   int countOf(String id) => counts[id] ?? 0;
 
@@ -52,11 +72,39 @@ class Submission {
     return totalMemberships / totalWashes * 100;
   }
 
+  /// Business average using cars talked to as the denominator (matches the BA
+  /// MASTER DOC). Falls back to [conversionRate] when no talked-to is recorded.
+  double get businessAverage {
+    if (talkedTo <= 0) return conversionRate;
+    return totalMemberships / talkedTo * 100;
+  }
+
+  /// Memberships + single washes above the economy tier (everything but Economy).
+  int get aboveEco {
+    final economy = countOf('economy');
+    return totalMemberships + totalSingleWashes - economy;
+  }
+
+  /// Weighted point total across all line items (+1 per car talked to).
+  int get overallScore {
+    var total = talkedTo * kTalkedToPoints;
+    for (final item in kLineItems) {
+      total += countOf(item.id) * pointOf(item);
+    }
+    return total;
+  }
+
   Submission copyWith({
     String? employeeName,
     double? baGoal,
     Map<String, int>? counts,
     DateTime? submittedAt,
+    int? talkedTo,
+    bool? approved,
+    String? approvedBy,
+    DateTime? approvedAt,
+    String? editedBy,
+    DateTime? editedAt,
   }) {
     return Submission(
       id: id,
@@ -64,6 +112,12 @@ class Submission {
       baGoal: baGoal ?? this.baGoal,
       counts: counts ?? this.counts,
       submittedAt: submittedAt ?? this.submittedAt,
+      talkedTo: talkedTo ?? this.talkedTo,
+      approved: approved ?? this.approved,
+      approvedBy: approvedBy ?? this.approvedBy,
+      approvedAt: approvedAt ?? this.approvedAt,
+      editedBy: editedBy ?? this.editedBy,
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 
@@ -73,6 +127,12 @@ class Submission {
         'baGoal': baGoal,
         'counts': counts,
         'submittedAt': submittedAt.toIso8601String(),
+        'talkedTo': talkedTo,
+        'approved': approved,
+        if (approvedBy != null) 'approvedBy': approvedBy,
+        if (approvedAt != null) 'approvedAt': approvedAt!.toIso8601String(),
+        if (editedBy != null) 'editedBy': editedBy,
+        if (editedAt != null) 'editedAt': editedAt!.toIso8601String(),
       };
 
   factory Submission.fromJson(Map<String, dynamic> json) {
@@ -85,6 +145,12 @@ class Submission {
       submittedAt:
           DateTime.tryParse(json['submittedAt'] as String? ?? '') ??
               DateTime.now(),
+      talkedTo: (json['talkedTo'] as num?)?.toInt() ?? 0,
+      approved: json['approved'] as bool? ?? false,
+      approvedBy: json['approvedBy'] as String?,
+      approvedAt: DateTime.tryParse(json['approvedAt'] as String? ?? ''),
+      editedBy: json['editedBy'] as String?,
+      editedAt: DateTime.tryParse(json['editedAt'] as String? ?? ''),
     );
   }
 }
