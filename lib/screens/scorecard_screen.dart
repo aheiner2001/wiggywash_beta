@@ -544,12 +544,20 @@ class _TalkedToCard extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
+class _SummaryCard extends StatefulWidget {
   const _SummaryCard({required this.live});
   final Submission live;
 
   @override
+  State<_SummaryCard> createState() => _SummaryCardState();
+}
+
+class _SummaryCardState extends State<_SummaryCard> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final live = widget.live;
     return AppCard(
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -586,8 +594,81 @@ class _SummaryCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _expanded = !_expanded),
+              icon: Icon(
+                _expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 20,
+              ),
+              label: Text(_expanded ? 'Collapse' : 'Expand'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 200),
+            crossFadeState: _expanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: _BreakdownDetails(live: live),
+            secondChild: const SizedBox(width: double.infinity),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// The full, line-by-line breakdown of today's tallies, grouped by section.
+/// Mirrors the "Full breakdown" that previously lived on the reports page.
+class _BreakdownDetails extends StatelessWidget {
+  const _BreakdownDetails({required this.live});
+  final Submission live;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        for (final section in Store.instance.enabledSections) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              child: Text(section.title.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.roseText,
+                  )),
+            ),
+          ),
+          for (final item in itemsFor(section))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(item.label, style: TextStyles.body),
+                  Text('${live.countOf(item.id)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      )),
+                ],
+              ),
+            ),
+        ],
+      ],
     );
   }
 }
