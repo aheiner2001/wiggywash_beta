@@ -12,7 +12,7 @@ import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/ui_kit.dart';
 import 'challenge_editor_screen.dart';
-import 'help_screen.dart';
+import 'tips_screen.dart';
 import 'master_sheet_screen.dart';
 import 'pricing_screen.dart';
 import 'team_screen.dart';
@@ -261,10 +261,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'How to view the breakdown',
+            tooltip: 'Tips',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => const HelpScreen(audience: HelpAudience.manager),
+                builder: (_) =>
+                    const TipsScreen(audience: TipsAudience.manager),
               ),
             ),
             icon: const Icon(Icons.info_outline_rounded),

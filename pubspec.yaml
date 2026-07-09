@@ -69,8 +69,6 @@ flutter:
 
   assets:
     - assets/logo.png
-    - assets/help_tap_total.png
-    - assets/help_full_breakdown.png
 
 flutter_launcher_icons:
   android: true

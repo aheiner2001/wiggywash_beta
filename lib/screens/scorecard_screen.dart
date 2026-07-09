@@ -14,7 +14,7 @@ import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
 import '../widgets/ui_kit.dart';
-import 'help_screen.dart';
+import 'tips_screen.dart';
 import 'reports_screen.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
@@ -262,10 +262,11 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
         title: const Text('My Scorecard'),
         actions: [
           IconButton(
-            tooltip: 'How to view the breakdown',
+            tooltip: 'Tips',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => const HelpScreen(audience: HelpAudience.employee),
+                builder: (_) =>
+                    const TipsScreen(audience: TipsAudience.employee),
               ),
             ),
             icon: const Icon(Icons.info_outline_rounded),
