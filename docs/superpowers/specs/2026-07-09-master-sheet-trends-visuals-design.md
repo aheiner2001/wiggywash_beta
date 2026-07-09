@@ -1,7 +1,7 @@
 # Master Sheet Trends Polish + Visual Settings — Design Spec
 
 **Date:** 2026-07-09  
-**Status:** Draft (awaiting user review)  
+**Status:** Approved  
 **Approach:** Enhance current Trends (`fl_chart` + stacked layout) — Approach 1
 
 ## Summary
