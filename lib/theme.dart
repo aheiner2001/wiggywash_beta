@@ -44,12 +44,13 @@ class AppSpacing {
   static const item = 8.0;
 }
 
-ThemeData buildTheme() {
+ThemeData buildTheme({Color? primary}) {
+  final brand = primary ?? AppColors.navy;
   final scheme = ColorScheme.fromSeed(
-    seedColor: AppColors.navy,
+    seedColor: brand,
     brightness: Brightness.light,
   ).copyWith(
-    primary: AppColors.navy,
+    primary: brand,
     secondary: AppColors.accent,
     surface: AppColors.surface,
     onPrimary: Colors.white,
@@ -65,12 +66,12 @@ ThemeData buildTheme() {
   );
 
   return base.copyWith(
-    appBarTheme: const AppBarTheme(
-      backgroundColor: AppColors.navy,
+    appBarTheme: AppBarTheme(
+      backgroundColor: brand,
       foregroundColor: Colors.white,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: TextStyle(
+      titleTextStyle: const TextStyle(
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.w800,
@@ -83,7 +84,7 @@ ThemeData buildTheme() {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.navy,
+        backgroundColor: brand,
         foregroundColor: Colors.white,
         elevation: 0,
         minimumSize: const Size.fromHeight(52),
@@ -97,9 +98,9 @@ ThemeData buildTheme() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.navy,
+        foregroundColor: brand,
         minimumSize: const Size.fromHeight(52),
-        side: const BorderSide(color: AppColors.navy, width: 1.5),
+        side: BorderSide(color: brand, width: 1.5),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.button),
@@ -121,13 +122,37 @@ ThemeData buildTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.field),
-        borderSide: const BorderSide(color: AppColors.navy, width: 2),
+        borderSide: BorderSide(color: brand, width: 2),
       ),
     ),
     dividerTheme: const DividerThemeData(
       color: AppColors.hairline,
       thickness: 1,
       space: 1,
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return brand;
+        return null;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return brand.withValues(alpha: 0.45);
+        }
+        return null;
+      }),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return Colors.white;
+          return AppColors.textPrimary;
+        }),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return brand;
+          return null;
+        }),
+      ),
     ),
   );
 }

@@ -47,6 +47,36 @@ class Company {
 
   static String normalizeCode(String raw) => raw.trim().toUpperCase();
 
+  Company copyWith({
+    String? name,
+    String? companyCode,
+    CompanyStatus? status,
+    String? logoUrl,
+    String? primaryColor,
+    bool clearPrimaryColor = false,
+    DateTime? createdAt,
+    DateTime? approvedAt,
+    String? approvedBy,
+    String? createdByEmail,
+    String? createdByUid,
+    String? rejectionReason,
+  }) =>
+      Company(
+        id: id,
+        name: name ?? this.name,
+        companyCode: companyCode ?? this.companyCode,
+        status: status ?? this.status,
+        logoUrl: logoUrl ?? this.logoUrl,
+        primaryColor:
+            clearPrimaryColor ? null : (primaryColor ?? this.primaryColor),
+        createdAt: createdAt ?? this.createdAt,
+        approvedAt: approvedAt ?? this.approvedAt,
+        approvedBy: approvedBy ?? this.approvedBy,
+        createdByEmail: createdByEmail ?? this.createdByEmail,
+        createdByUid: createdByUid ?? this.createdByUid,
+        rejectionReason: rejectionReason ?? this.rejectionReason,
+      );
+
   Map<String, dynamic> toMap() => {
         'name': name,
         'companyCode': normalizeCode(companyCode),
