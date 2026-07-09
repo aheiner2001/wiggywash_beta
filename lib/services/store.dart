@@ -11,11 +11,13 @@ import 'package:uuid/uuid.dart';
 import '../config/auth_config.dart';
 import '../models/app_user.dart';
 import '../models/challenge.dart';
+import '../models/company.dart';
 import '../models/location.dart';
 import '../models/profile.dart';
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../models/worker.dart';
+import 'company_migration.dart' as company_migration;
 
 /// Where the app should send the user right now.
 enum AppView {
@@ -60,6 +62,9 @@ class Store extends ChangeNotifier {
   static const _kSettings = 'ww_settings';
   static const _kActiveLocation = 'ww_active_location';
   static const _kEmployeeProfile = 'ww_employee_profile';
+  static const _kCompanies = 'companies';
+  static const _kActiveCompany = 'ww_active_company';
+  static const _kEmployeeCompanyCode = 'ww_employee_company_code';
 
   static const _kLocations = 'locations';
   static const _kUsers = 'users';
@@ -93,6 +98,11 @@ class Store extends ChangeNotifier {
   // chosen name, without losing their account session.
   bool _actingAsEmployee = false;
   String? _actingName;
+
+  // ---- Company ----
+  String? _activeCompanyId;
+  Company? _activeCompany;
+  List<Location> _companyLocations = [];
 
   // ---- Locations ----
   List<Location> _locations = [];
@@ -133,6 +143,9 @@ class Store extends ChangeNotifier {
   /// The active team challenge for this location, if any.
   Challenge? get challenge => _challenge;
   AppUser? get appUser => _appUser;
+  String? get activeCompanyId => _activeCompanyId;
+  Company? get activeCompany => _activeCompany;
+  List<Location> get companyLocations => List.unmodifiable(_companyLocations);
   List<Location> get locations => List.unmodifiable(_locations);
   String? get activeLocationId => _activeLocationId;
   bool get pendingManagerCreate => _pendingManagerCreate;
@@ -226,8 +239,17 @@ class Store extends ChangeNotifier {
   // ---- Firestore helpers ----------------------------------------------
 
   FirebaseFirestore get _db => FirebaseFirestore.instance;
-  CollectionReference<Map<String, dynamic>> get _locationsCol =>
-      _db.collection(_kLocations);
+  CollectionReference<Map<String, dynamic>> get _companiesCol =>
+      _db.collection(_kCompanies);
+  DocumentReference<Map<String, dynamic>>? get _companyRef =>
+      _activeCompanyId == null ? null : _companiesCol.doc(_activeCompanyId);
+  CollectionReference<Map<String, dynamic>> get _locationsCol {
+    final ref = _companyRef;
+    if (ref == null) {
+      return _db.collection(_kLocations);
+    }
+    return ref.collection(_kLocations);
+  }
   CollectionReference<Map<String, dynamic>> get _usersCol =>
       _db.collection(_kUsers);
   DocumentReference<Map<String, dynamic>>? get _locationRef =>
@@ -240,6 +262,7 @@ class Store extends ChangeNotifier {
     _loadPrices();
     _loadSettings();
     _loadEmployeeProfile();
+    _activeCompanyId ??= _prefs?.getString(_kActiveCompany);
     _activeLocationId = _prefs?.getString(_kActiveLocation);
 
     _cloud = Firebase.apps.isNotEmpty;
@@ -286,6 +309,10 @@ class Store extends ChangeNotifier {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       _employeeName = map['name'] as String?;
       _employeeLocationId = map['locationId'] as String?;
+      final companyId = map['companyId'] as String?;
+      if (companyId != null && companyId.isNotEmpty) {
+        _activeCompanyId = companyId;
+      }
     } catch (_) {
       _employeeName = null;
       _employeeLocationId = null;
@@ -446,9 +473,64 @@ class Store extends ChangeNotifier {
   Future<void> signOutEmployee() async {
     _employeeName = null;
     _employeeLocationId = null;
+    _activeCompanyId = null;
+    _activeCompany = null;
+    _companyLocations = [];
     await _prefs?.remove(_kEmployeeProfile);
+    await _prefs?.remove(_kActiveCompany);
+    await _prefs?.remove(_kEmployeeCompanyCode);
     notifyListeners();
   }
+
+  // ---- Company flow ----------------------------------------------------
+
+  Future<Company?> lookupCompanyCode(String code) async {
+    final clean = Company.normalizeCode(code);
+    if (clean.isEmpty) return null;
+    try {
+      final snap = await _companiesCol
+          .where('companyCode', isEqualTo: clean)
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) return Company.fromDoc(snap.docs.first);
+      final all = await _companiesCol.get();
+      for (final d in all.docs) {
+        final c = Company.fromDoc(d);
+        if (Company.normalizeCode(c.companyCode) == clean) return c;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('lookupCompanyCode error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> isCompanyCodeAvailable(String code) async {
+    final clean = Company.normalizeCode(code);
+    if (clean.isEmpty) return false;
+    return await lookupCompanyCode(clean) == null;
+  }
+
+  Future<void> previewCompany(String companyId) async {
+    _activeCompanyId = companyId;
+    final doc = await _companiesCol.doc(companyId).get();
+    _activeCompany = doc.exists ? Company.fromDoc(doc) : null;
+    final locSnap = await _locationsCol.orderBy('name').get();
+    _companyLocations = locSnap.docs.map(Location.fromDoc).toList();
+    notifyListeners();
+  }
+
+  Future<String?> migrateToCompany({
+    required String companyId,
+    required String companyName,
+    required String companyCode,
+  }) =>
+      company_migration.migrateToCompany(
+        db: _db,
+        companyId: companyId,
+        companyName: companyName,
+        companyCode: companyCode,
+      );
 
   // ---- Employee site-code flow ----------------------------------------
 
@@ -490,14 +572,27 @@ class Store extends ChangeNotifier {
   Future<void> signInEmployee({
     required String locationId,
     required String name,
+    String? companyId,
+    String? companyCode,
   }) async {
     _employeeName = name;
     _employeeLocationId = locationId;
     _activeLocationId = locationId;
-    await _prefs?.setString(
-      _kEmployeeProfile,
-      jsonEncode({'name': name, 'locationId': locationId}),
-    );
+    final profile = <String, dynamic>{
+      'name': name,
+      'locationId': locationId,
+    };
+    if (companyId != null && companyId.isNotEmpty) {
+      _activeCompanyId = companyId;
+      profile['companyId'] = companyId;
+      await _prefs?.setString(_kActiveCompany, companyId);
+    }
+    if (companyCode != null && companyCode.isNotEmpty) {
+      final normalized = Company.normalizeCode(companyCode);
+      profile['companyCode'] = normalized;
+      await _prefs?.setString(_kEmployeeCompanyCode, normalized);
+    }
+    await _prefs?.setString(_kEmployeeProfile, jsonEncode(profile));
     await _prefs?.setString(_kActiveLocation, locationId);
     _bindLocation(locationId);
     notifyListeners();
