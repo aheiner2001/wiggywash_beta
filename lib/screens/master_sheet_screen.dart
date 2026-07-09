@@ -651,7 +651,17 @@ class _MainPanel extends StatelessWidget {
                       ),
                     TextButton(
                       onPressed: () => update(TrendsVisualPrefs.defaults()),
-                      child: const Text('Show all / Reset'),
+                      child: const Text('Show all'),
+                    ),
+                    TextButton(
+                      onPressed: () => update(local.copyWith(
+                        showSummary: false,
+                        showRevenueOverTime: false,
+                        showByEmployee: false,
+                        showBaByEmployee: false,
+                        showMembershipMix: false,
+                      )),
+                      child: const Text('Hide all'),
                     ),
                   ],
                 );

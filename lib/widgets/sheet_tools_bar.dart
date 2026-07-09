@@ -114,12 +114,17 @@ class SheetToolsBar extends StatelessWidget {
                         ),
                         TextButton(
                           onPressed: () {
-                            setLocal(() => hidden.clear());
+                            final all = SheetColumnId.allToggleableIds().toSet();
+                            setLocal(() {
+                              hidden
+                                ..clear()
+                                ..addAll(all);
+                            });
                             onPrefsChanged(
-                              prefs.copyWith(hiddenColumnIds: {}),
+                              prefs.copyWith(hiddenColumnIds: {...all}),
                             );
                           },
-                          child: const Text('Reset'),
+                          child: const Text('Hide all'),
                         ),
                       ],
                     ),

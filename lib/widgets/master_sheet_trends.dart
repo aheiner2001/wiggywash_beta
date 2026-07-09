@@ -21,6 +21,17 @@ String _compactMoney(double v) {
   return _money.format(v);
 }
 
+/// Soft slate chart palette (avoids heavy navy bars).
+const _chartLine = Color(0xFF6B7280);
+const _chartFill = Color(0xFF9CA3AF);
+const _chartBar = Color(0xFF9CA3AF);
+const _chartBarAlt = Color(0xFFD1D5DB);
+const _chartGrid = Color(0xFFE5E7EB);
+
+Widget _clipChart(Widget child) => ClipRect(
+      child: child,
+    );
+
 /// Summary chips + revenue-over-time + employee comparison charts.
 class MasterSheetTrends extends StatelessWidget {
   const MasterSheetTrends({
@@ -55,7 +66,7 @@ class MasterSheetTrends extends StatelessWidget {
             child: stats.revenueByDay.isEmpty
                 ? const _EmptyChart(
                     message: 'No approved shifts in this period')
-                : _RevenueLineChart(points: stats.revenueByDay),
+                : _clipChart(_RevenueLineChart(points: stats.revenueByDay)),
           ),
         ));
       }
@@ -67,7 +78,7 @@ class MasterSheetTrends extends StatelessWidget {
             height: 200,
             child: stats.employeeTotals.isEmpty
                 ? const _EmptyChart(message: 'No employee totals yet')
-                : _EmployeeBarChart(rows: stats.employeeTotals),
+                : _clipChart(_EmployeeBarChart(rows: stats.employeeTotals)),
           ),
         ));
       }
@@ -79,7 +90,7 @@ class MasterSheetTrends extends StatelessWidget {
             height: 200,
             child: stats.employeeBa.isEmpty
                 ? const _EmptyChart(message: 'No BA data yet')
-                : _EmployeeBaChart(rows: stats.employeeBa),
+                : _clipChart(_EmployeeBaChart(rows: stats.employeeBa)),
           ),
         ));
       }
@@ -91,7 +102,7 @@ class MasterSheetTrends extends StatelessWidget {
             height: 220,
             child: stats.membershipMix.isEmpty
                 ? const _EmptyChart(message: 'No wash mix yet')
-                : _MembershipMixChart(rows: stats.membershipMix),
+                : _clipChart(_MembershipMixChart(rows: stats.membershipMix)),
           ),
         ));
       }
@@ -227,7 +238,16 @@ class _RevenueLineChart extends StatelessWidget {
       LineChartData(
         minY: 0,
         maxY: chartMaxY,
-        gridData: const FlGridData(show: true, drawVerticalLine: false),
+        clipData: const FlClipData.all(),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (v) => const FlLine(
+            color: _chartGrid,
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
           topTitles:
@@ -274,12 +294,26 @@ class _RevenueLineChart extends StatelessWidget {
           LineChartBarData(
             spots: spots,
             isCurved: points.length > 1,
-            color: AppColors.navy,
-            barWidth: 3,
-            dotData: const FlDotData(show: true),
+            color: _chartLine,
+            barWidth: 2.5,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+                radius: 3.5,
+                color: _chartLine,
+                strokeWidth: 0,
+              ),
+            ),
             belowBarData: BarAreaData(
               show: true,
-              color: AppColors.blueSoft.withValues(alpha: 0.8),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  _chartFill.withValues(alpha: 0.35),
+                  _chartFill.withValues(alpha: 0.05),
+                ],
+              ),
             ),
           ),
         ],
@@ -313,7 +347,17 @@ class _EmployeeBarChart extends StatelessWidget {
     return BarChart(
       BarChartData(
         maxY: chartMaxY,
-        gridData: const FlGridData(show: true, drawVerticalLine: false),
+        clipData: const FlClipData.all(),
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (v) => const FlLine(
+            color: _chartGrid,
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
           topTitles:
@@ -356,7 +400,7 @@ class _EmployeeBarChart extends StatelessWidget {
               barRods: [
                 BarChartRodData(
                   toY: rows[i].revenue,
-                  color: AppColors.navy,
+                  color: _chartBar,
                   width: 14,
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(4)),
@@ -380,7 +424,17 @@ class _EmployeeBaChart extends StatelessWidget {
     return BarChart(
       BarChartData(
         maxY: chartMaxY,
-        gridData: const FlGridData(show: true, drawVerticalLine: false),
+        clipData: const FlClipData.all(),
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (v) => const FlLine(
+            color: _chartGrid,
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
           topTitles:
@@ -423,7 +477,7 @@ class _EmployeeBaChart extends StatelessWidget {
               barRods: [
                 BarChartRodData(
                   toY: rows[i].ba,
-                  color: AppColors.navy,
+                  color: _chartBar,
                   width: 14,
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(4)),
@@ -439,8 +493,6 @@ class _EmployeeBaChart extends StatelessWidget {
 class _MembershipMixChart extends StatelessWidget {
   const _MembershipMixChart({required this.rows});
   final List<EmployeeWashMix> rows;
-
-  static const _singlesColor = Color(0xFF5B7C99);
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +514,17 @@ class _MembershipMixChart extends StatelessWidget {
           child: BarChart(
             BarChartData(
               maxY: chartMaxY,
-              gridData: const FlGridData(show: true, drawVerticalLine: false),
+              clipData: const FlClipData.all(),
+              alignment: BarChartAlignment.spaceAround,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (v) => const FlLine(
+                  color: _chartGrid,
+                  strokeWidth: 1,
+                  dashArray: [4, 4],
+                ),
+              ),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(
@@ -504,14 +566,14 @@ class _MembershipMixChart extends StatelessWidget {
                     barRods: [
                       BarChartRodData(
                         toY: rows[i].memberships.toDouble(),
-                        color: AppColors.navy,
+                        color: _chartBar,
                         width: 8,
                         borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(3)),
                       ),
                       BarChartRodData(
                         toY: rows[i].singles.toDouble(),
-                        color: _singlesColor,
+                        color: _chartBarAlt,
                         width: 8,
                         borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(3)),
