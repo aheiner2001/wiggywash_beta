@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
@@ -8,6 +9,7 @@ import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
 import '../widgets/challenge_card.dart';
+import '../widgets/mini_scorecard_card.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/ui_kit.dart';
@@ -22,6 +24,10 @@ final _dayLabel = DateFormat('EEEE, MMM d');
 final _time = DateFormat('h:mm a');
 
 enum _Period { day, week, month }
+
+enum _PeopleLayout { list, cards }
+
+const _kPeopleLayout = 'ww_dashboard_people_layout';
 
 final _monthLabel = DateFormat('MMMM yyyy');
 final _shortDay = DateFormat('M/d');
@@ -38,6 +44,28 @@ class ManagerScreen extends StatefulWidget {
 class _ManagerScreenState extends State<ManagerScreen> {
   DateTime _day = DateTime.now();
   _Period _period = _Period.day;
+  _PeopleLayout _peopleLayout = _PeopleLayout.list;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPeopleLayout();
+  }
+
+  Future<void> _loadPeopleLayout() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kPeopleLayout);
+    if (!mounted) return;
+    if (raw == _PeopleLayout.cards.name) {
+      setState(() => _peopleLayout = _PeopleLayout.cards);
+    }
+  }
+
+  Future<void> _setPeopleLayout(_PeopleLayout layout) async {
+    setState(() => _peopleLayout = layout);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPeopleLayout, layout.name);
+  }
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
@@ -336,7 +364,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
               .toList();
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              constraints: BoxConstraints(
+                maxWidth:
+                    _peopleLayout == _PeopleLayout.cards ? 1100 : 760,
+              ),
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
                 children: [
@@ -364,6 +395,23 @@ class _ManagerScreenState extends State<ManagerScreen> {
                   if (all.isNotEmpty) ...[
                     _TrendsCard(series: _trendSeries()),
                     const SizedBox(height: 12),
+                    SegmentedButton<_PeopleLayout>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _PeopleLayout.list,
+                          label: Text('List'),
+                          icon: Icon(Icons.view_agenda_outlined, size: 18),
+                        ),
+                        ButtonSegment(
+                          value: _PeopleLayout.cards,
+                          label: Text('Cards'),
+                          icon: Icon(Icons.grid_view_rounded, size: 18),
+                        ),
+                      ],
+                      selected: {_peopleLayout},
+                      onSelectionChanged: (s) => _setPeopleLayout(s.first),
+                    ),
+                    const SizedBox(height: 12),
                   ],
                   if (all.isEmpty && Store.instance.submissionsLoading) ...[
                     const SkeletonCard(lines: 3),
@@ -371,7 +419,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     const SkeletonCard(lines: 3),
                   ] else if (all.isEmpty)
                     const _EmptyState()
-                  else
+                  else if (_peopleLayout == _PeopleLayout.list)
                     ...(_byEmployee(all).entries.map(
                           (e) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
@@ -380,7 +428,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
                               submissions: e.value,
                             ),
                           ),
-                        )),
+                        ))
+                  else
+                    _PeopleCardsGrid(byEmployee: _byEmployee(all)),
                 ],
               ),
             ),
@@ -396,6 +446,38 @@ class _ManagerScreenState extends State<ManagerScreen> {
       map.putIfAbsent(s.employeeName, () => []).add(s);
     }
     return map;
+  }
+}
+
+class _PeopleCardsGrid extends StatelessWidget {
+  const _PeopleCardsGrid({required this.byEmployee});
+  final Map<String, List<Submission>> byEmployee;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = byEmployee.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cross = w >= 900 ? 4 : (w >= 600 ? 3 : 2);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: entries.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cross,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: cross >= 3 ? 0.72 : 0.78,
+          ),
+          itemBuilder: (context, i) {
+            final e = entries[i];
+            return MiniScorecardCard(name: e.key, submissions: e.value);
+          },
+        );
+      },
+    );
   }
 }
 

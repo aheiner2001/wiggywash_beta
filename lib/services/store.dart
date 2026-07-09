@@ -17,6 +17,7 @@ import '../models/profile.dart';
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../models/worker.dart';
+import '../utils/brand_color.dart';
 import 'company_migration.dart' as company_migration;
 
 /// Where the app should send the user right now.
@@ -686,6 +687,28 @@ class Store extends ChangeNotifier {
       return snap.docs.length;
     } catch (_) {
       return 0;
+    }
+  }
+
+  Future<String?> updateCompanyPrimaryColor(String hex) async {
+    final id = _activeCompanyId;
+    if (id == null) return 'No active company.';
+    final parsed = parseBrandColor(hex);
+    if (parsed == null) return 'Invalid color.';
+    final normalized = formatBrandColor(parsed);
+    try {
+      await _companiesCol.doc(id).set(
+        {'primaryColor': normalized},
+        SetOptions(merge: true),
+      );
+      if (_activeCompany != null) {
+        _activeCompany = _activeCompany!.copyWith(primaryColor: normalized);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('updateCompanyPrimaryColor error: $e');
+      return 'Could not save brand color.';
     }
   }
 
