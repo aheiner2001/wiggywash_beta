@@ -34,8 +34,8 @@ enum AppView {
   /// Manager dashboard.
   manager,
 
-  /// Super-admin console.
-  superAdmin,
+  /// Platform-admin console.
+  platformAdmin,
 }
 
 /// The app's single data seam.
@@ -188,10 +188,10 @@ class Store extends ChangeNotifier {
       case AppView.employee:
         return Profile(name: _employeeName ?? '', role: UserRole.employee);
       case AppView.manager:
-        return Profile(name: _appUser!.name, role: UserRole.manager);
-      case AppView.superAdmin:
+        return Profile(name: _appUser!.name, role: UserRole.companyManager);
+      case AppView.platformAdmin:
         final n = _appUser!.name;
-        return Profile(name: n.isEmpty ? 'Admin' : n, role: UserRole.superAdmin);
+        return Profile(name: n.isEmpty ? 'Admin' : n, role: UserRole.platformAdmin);
       default:
         return null;
     }
@@ -203,11 +203,11 @@ class Store extends ChangeNotifier {
 
     // A provisioned role wins — unless they've chosen to fill out a scorecard.
     final role = _role;
-    if (role == UserRole.superAdmin || role == UserRole.manager) {
+    if (role == UserRole.platformAdmin || role == UserRole.companyManager) {
       if (isActingAsEmployee) return AppView.employee;
     }
-    if (role == UserRole.superAdmin) return AppView.superAdmin;
-    if (role == UserRole.manager && _appUser!.locationId != null) {
+    if (role == UserRole.platformAdmin) return AppView.platformAdmin;
+    if (role == UserRole.companyManager && _appUser!.locationId != null) {
       return AppView.manager;
     }
     // Signed in with Google but no role yet → stay on the manager-auth screen
@@ -348,11 +348,11 @@ class Store extends ChangeNotifier {
   Future<void> _onUserDoc(DocumentSnapshot<Map<String, dynamic>> doc) async {
     _appUser = AppUser.fromDoc(doc);
     final role = _appUser!.role;
-    if (role == UserRole.superAdmin) {
+    if (role == UserRole.platformAdmin) {
       _bindLocationsList();
       _activeLocationId ??= _prefs?.getString(_kActiveLocation);
       _bindLocation(_activeLocationId);
-    } else if (role == UserRole.manager) {
+    } else if (role == UserRole.companyManager) {
       _activeLocationId = _appUser!.locationId;
       await _cacheSingleLocation(_activeLocationId);
       _bindLocation(_activeLocationId);
@@ -512,7 +512,7 @@ class Store extends ChangeNotifier {
     try {
       await _usersCol.doc(user.uid).set(
         {
-          'role': UserRole.superAdmin.name,
+          'role': UserRole.platformAdmin.firestoreValue,
           'email': (user.email ?? '').toLowerCase(),
           'createdAt': FieldValue.serverTimestamp(),
         },
@@ -543,7 +543,7 @@ class Store extends ChangeNotifier {
     try {
       if (entered == _superCode) {
         await _usersCol.doc(user.uid).set(
-          {'role': UserRole.superAdmin.name},
+          {'role': UserRole.platformAdmin.firestoreValue},
           SetOptions(merge: true),
         );
         _pendingManagerCreate = false;
@@ -561,7 +561,7 @@ class Store extends ChangeNotifier {
           if (targetId == null) return 'Could not create the site.';
         }
         await _usersCol.doc(user.uid).set(
-          {'role': UserRole.manager.name, 'locationId': targetId},
+          {'role': UserRole.companyManager.firestoreValue, 'locationId': targetId},
           SetOptions(merge: true),
         );
         _pendingManagerCreate = false;

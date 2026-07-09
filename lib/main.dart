@@ -61,7 +61,7 @@ class _Root extends StatelessWidget {
             return ScorecardScreen(profile: store.profile!);
           case AppView.manager:
             return const ManagerScreen();
-          case AppView.superAdmin:
+          case AppView.platformAdmin:
             return const SuperAdminScreen();
         }
       },

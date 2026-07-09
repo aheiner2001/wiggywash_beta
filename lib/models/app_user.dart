@@ -11,6 +11,7 @@ class AppUser {
     required this.email,
     required this.displayName,
     this.role,
+    this.companyId,
     this.locationId,
     this.createdAt,
   });
@@ -19,6 +20,7 @@ class AppUser {
   final String email;
   final String displayName;
   final UserRole? role;
+  final String? companyId;
   final String? locationId;
   final DateTime? createdAt;
 
@@ -32,11 +34,17 @@ class AppUser {
 
   bool get isProvisioned => role != null;
 
-  AppUser copyWith({UserRole? role, String? locationId}) => AppUser(
+  AppUser copyWith({
+    UserRole? role,
+    String? companyId,
+    String? locationId,
+  }) =>
+      AppUser(
         uid: uid,
         email: email,
         displayName: displayName,
         role: role ?? this.role,
+        companyId: companyId ?? this.companyId,
         locationId: locationId ?? this.locationId,
         createdAt: createdAt,
       );
@@ -49,6 +57,7 @@ class AppUser {
       email: (data['email'] as String? ?? '').toLowerCase(),
       displayName: data['displayName'] as String? ?? '',
       role: roleFromString(data['role'] as String?),
+      companyId: data['companyId'] as String?,
       locationId: data['locationId'] as String?,
       createdAt: ts is Timestamp ? ts.toDate() : null,
     );
