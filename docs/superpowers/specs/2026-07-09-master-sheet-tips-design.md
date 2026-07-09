@@ -1,7 +1,7 @@
 # Master Sheet Trends + Tips — Design Spec
 
 **Date:** 2026-07-09  
-**Status:** Draft (awaiting user review)  
+**Status:** Approved  
 **Stack decision:** Stay on Flutter web (no React rewrite)
 
 ## Summary
