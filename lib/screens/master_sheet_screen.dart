@@ -14,6 +14,7 @@ import '../utils/master_sheet_stats.dart';
 import '../utils/sheet_column.dart';
 import '../utils/sheet_row_tools.dart';
 import '../utils/sheet_tools_prefs.dart';
+import '../utils/trends_visual_prefs.dart';
 import '../utils/xlsx.dart';
 import '../widgets/master_sheet_trends.dart';
 import '../widgets/profile_menu.dart';
@@ -105,12 +106,14 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   MasterSheetLayout _layout = MasterSheetLayout.vertical;
   SheetToolsPrefs _sheetPrefs = SheetToolsPrefs.defaults();
   Set<String>? _selectedEmployees; // session-only
+  TrendsVisualPrefs _trendsPrefs = TrendsVisualPrefs.defaults();
 
   @override
   void initState() {
     super.initState();
     _loadLayoutPref();
     _loadSheetToolsPref();
+    _loadTrendsPrefs();
   }
 
   Future<void> _loadLayoutPref() async {
@@ -128,9 +131,20 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
     setState(() => _sheetPrefs = p);
   }
 
+  Future<void> _loadTrendsPrefs() async {
+    final p = await TrendsVisualPrefs.load();
+    if (!mounted) return;
+    setState(() => _trendsPrefs = p);
+  }
+
   Future<void> _setSheetPrefs(SheetToolsPrefs prefs) async {
     setState(() => _sheetPrefs = prefs);
     await SheetToolsPrefs.save(prefs);
+  }
+
+  Future<void> _setTrendsPrefs(TrendsVisualPrefs prefs) async {
+    setState(() => _trendsPrefs = prefs);
+    await TrendsVisualPrefs.save(prefs);
   }
 
   Future<void> _setLayout(MasterSheetLayout layout) async {
@@ -412,6 +426,8 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                 onSheetPrefs: _setSheetPrefs,
                 onSelectedEmployees: (s) =>
                     setState(() => _selectedEmployees = s),
+                trendsPrefs: _trendsPrefs,
+                onTrendsPrefs: _setTrendsPrefs,
                 onView: (v) => setState(() => _view = v),
                 onShift: _shift,
                 onMember: (m) => setState(() => _member = m),
@@ -470,6 +486,8 @@ class _MainPanel extends StatelessWidget {
     required this.selectedEmployees,
     required this.onSheetPrefs,
     required this.onSelectedEmployees,
+    required this.trendsPrefs,
+    required this.onTrendsPrefs,
     required this.onView,
     required this.onShift,
     required this.onMember,
@@ -490,6 +508,8 @@ class _MainPanel extends StatelessWidget {
   final Set<String>? selectedEmployees;
   final ValueChanged<SheetToolsPrefs> onSheetPrefs;
   final ValueChanged<Set<String>?> onSelectedEmployees;
+  final TrendsVisualPrefs trendsPrefs;
+  final ValueChanged<TrendsVisualPrefs> onTrendsPrefs;
   final ValueChanged<_View> onView;
   final ValueChanged<int> onShift;
   final ValueChanged<String?> onMember;
@@ -563,15 +583,119 @@ class _MainPanel extends StatelessWidget {
     );
   }
 
+  Future<void> _openTrendsVisuals(BuildContext context) async {
+    var local = trendsPrefs;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: StatefulBuilder(
+              builder: (ctx, setLocal) {
+                void update(TrendsVisualPrefs next) {
+                  setLocal(() => local = next);
+                  onTrendsPrefs(next);
+                }
+
+                Widget check(
+                    String label, bool value, ValueChanged<bool> onChanged) {
+                  return CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(label),
+                    value: value,
+                    onChanged: (v) => onChanged(v ?? false),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Visuals', style: TextStyles.subheading),
+                    const SizedBox(height: 8),
+                    check('Summary chips', local.showSummary, (v) {
+                      update(local.copyWith(showSummary: v));
+                    }),
+                    check('Revenue over time', local.showRevenueOverTime, (v) {
+                      update(local.copyWith(showRevenueOverTime: v));
+                    }),
+                    check('By employee', local.showByEmployee, (v) {
+                      update(local.copyWith(showByEmployee: v));
+                    }),
+                    check('BA % by employee', local.showBaByEmployee, (v) {
+                      update(local.copyWith(showBaByEmployee: v));
+                    }),
+                    check('Memberships vs singles', local.showMembershipMix,
+                        (v) {
+                      update(local.copyWith(showMembershipMix: v));
+                    }),
+                    const Divider(),
+                    const Text('Trends panel', style: TextStyles.caption),
+                    for (final mode in TrendsPanelMode.values)
+                      ListTile(
+                        dense: true,
+                        title: Text(switch (mode) {
+                          TrendsPanelMode.expanded => 'Expanded',
+                          TrendsPanelMode.chipsOnly => 'Chips only',
+                          TrendsPanelMode.hidden => 'Hidden',
+                        }),
+                        trailing: local.panelMode == mode
+                            ? const Icon(Icons.check_rounded,
+                                color: AppColors.navy)
+                            : null,
+                        onTap: () =>
+                            update(local.copyWith(panelMode: mode)),
+                      ),
+                    TextButton(
+                      onPressed: () => update(TrendsVisualPrefs.defaults()),
+                      child: const Text('Show all / Reset'),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTrendsAndTable(BuildContext context) {
+    final hidden = trendsPrefs.panelMode == TrendsPanelMode.hidden;
     final trends = Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Trends', style: TextStyles.subheading),
-          const SizedBox(height: 10),
-          MasterSheetTrends(stats: stats),
+          if (hidden)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => onTrendsPrefs(
+                  trendsPrefs.copyWith(panelMode: TrendsPanelMode.expanded),
+                ),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: const Text('Trends (hidden) · Show'),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                const Expanded(
+                    child: Text('Trends', style: TextStyles.subheading)),
+                IconButton(
+                  tooltip: 'Visuals',
+                  icon: const Icon(Icons.tune_rounded),
+                  onPressed: () => _openTrendsVisuals(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            MasterSheetTrends(stats: stats, prefs: trendsPrefs),
+          ],
         ],
       ),
     );
@@ -588,9 +712,7 @@ class _MainPanel extends StatelessWidget {
               trends,
               const SizedBox(height: 16),
               SizedBox(
-                height: constraints.maxHeight > 420
-                    ? constraints.maxHeight * 0.55
-                    : 360,
+                height: 420,
                 child: table,
               ),
             ],

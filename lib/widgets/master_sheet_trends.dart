@@ -4,24 +4,51 @@ import 'package:intl/intl.dart';
 
 import '../theme.dart';
 import '../utils/master_sheet_stats.dart';
+import '../utils/trends_visual_prefs.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 final _shortDay = DateFormat('M/d');
 
+String _compactMoney(double v) {
+  final abs = v.abs();
+  if (abs >= 1000) {
+    final k = v / 1000;
+    final s = k == k.roundToDouble()
+        ? k.toStringAsFixed(0)
+        : k.toStringAsFixed(1);
+    return '\$${s}k';
+  }
+  return _money.format(v);
+}
+
 /// Summary chips + revenue-over-time + employee comparison charts.
 class MasterSheetTrends extends StatelessWidget {
-  const MasterSheetTrends({super.key, required this.stats});
+  const MasterSheetTrends({
+    super.key,
+    required this.stats,
+    required this.prefs,
+  });
 
   final MasterSheetStats stats;
+  final TrendsVisualPrefs prefs;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _SummaryRow(stats: stats),
-        const SizedBox(height: 12),
-        _ChartCard(
+    if (prefs.panelMode == TrendsPanelMode.hidden) {
+      return const SizedBox.shrink();
+    }
+
+    final showCharts = prefs.panelMode == TrendsPanelMode.expanded;
+    final children = <Widget>[];
+
+    if (prefs.showSummary) {
+      children.add(_SummaryRow(stats: stats));
+    }
+
+    if (showCharts) {
+      if (prefs.showRevenueOverTime) {
+        if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+        children.add(_ChartCard(
           title: 'Revenue over time',
           child: SizedBox(
             height: 180,
@@ -30,9 +57,11 @@ class MasterSheetTrends extends StatelessWidget {
                     message: 'No approved shifts in this period')
                 : _RevenueLineChart(points: stats.revenueByDay),
           ),
-        ),
-        const SizedBox(height: 12),
-        _ChartCard(
+        ));
+      }
+      if (prefs.showByEmployee) {
+        if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+        children.add(_ChartCard(
           title: 'By employee',
           child: SizedBox(
             height: 200,
@@ -40,8 +69,48 @@ class MasterSheetTrends extends StatelessWidget {
                 ? const _EmptyChart(message: 'No employee totals yet')
                 : _EmployeeBarChart(rows: stats.employeeTotals),
           ),
+        ));
+      }
+      if (prefs.showBaByEmployee) {
+        if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+        children.add(_ChartCard(
+          title: 'BA % by employee',
+          child: SizedBox(
+            height: 200,
+            child: stats.employeeBa.isEmpty
+                ? const _EmptyChart(message: 'No BA data yet')
+                : _EmployeeBaChart(rows: stats.employeeBa),
+          ),
+        ));
+      }
+      if (prefs.showMembershipMix) {
+        if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+        children.add(_ChartCard(
+          title: 'Memberships vs singles',
+          child: SizedBox(
+            height: 220,
+            child: stats.membershipMix.isEmpty
+                ? const _EmptyChart(message: 'No wash mix yet')
+                : _MembershipMixChart(rows: stats.membershipMix),
+          ),
+        ));
+      }
+    }
+
+    if (children.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          'No visuals enabled — open Visuals to show charts.',
+          style: TextStyles.caption,
+          textAlign: TextAlign.center,
         ),
-      ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
     );
   }
 }
@@ -133,6 +202,14 @@ class _EmptyChart extends StatelessWidget {
   }
 }
 
+Widget _shortName(String label) {
+  final short = label.length > 8 ? '${label.substring(0, 7)}…' : label;
+  return Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Text(short, style: TextStyles.caption.copyWith(fontSize: 10)),
+  );
+}
+
 class _RevenueLineChart extends StatelessWidget {
   const _RevenueLineChart({required this.points});
   final List<DayRevenue> points;
@@ -145,10 +222,11 @@ class _RevenueLineChart extends StatelessWidget {
     ];
     final maxY =
         points.map((p) => p.revenue).fold<double>(0, (a, b) => a > b ? a : b);
-    return LineChart(
+    final chartMaxY = maxY <= 0 ? 1.0 : maxY * 1.15;
+    final chart = LineChart(
       LineChartData(
         minY: 0,
-        maxY: maxY <= 0 ? 1 : maxY * 1.15,
+        maxY: chartMaxY,
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -159,11 +237,19 @@ class _RevenueLineChart extends StatelessWidget {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (v, _) => Text(
-                _money.format(v),
-                style: TextStyles.caption.copyWith(fontSize: 10),
-              ),
+              reservedSize: 44,
+              interval: chartMaxY / 3,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.max) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    _compactMoney(v),
+                    style: TextStyles.caption.copyWith(fontSize: 10),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
             ),
           ),
           bottomTitles: AxisTitles(
@@ -187,7 +273,7 @@ class _RevenueLineChart extends StatelessWidget {
         lineBarsData: [
           LineChartBarData(
             spots: spots,
-            isCurved: true,
+            isCurved: points.length > 1,
             color: AppColors.navy,
             barWidth: 3,
             dotData: const FlDotData(show: true),
@@ -198,6 +284,19 @@ class _RevenueLineChart extends StatelessWidget {
           ),
         ],
       ),
+    );
+    if (points.length != 1) return chart;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: chart),
+        const SizedBox(height: 4),
+        Text(
+          '${_shortDay.format(points.first.day)} · ${_money.format(points.first.revenue)}',
+          style: TextStyles.caption,
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }
@@ -210,9 +309,10 @@ class _EmployeeBarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final maxY =
         rows.map((e) => e.revenue).fold<double>(0, (a, b) => a > b ? a : b);
+    final chartMaxY = maxY <= 0 ? 1.0 : maxY * 1.15;
     return BarChart(
       BarChartData(
-        maxY: maxY <= 0 ? 1 : maxY * 1.15,
+        maxY: chartMaxY,
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -223,11 +323,19 @@ class _EmployeeBarChart extends StatelessWidget {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (v, _) => Text(
-                _money.format(v),
-                style: TextStyles.caption.copyWith(fontSize: 10),
-              ),
+              reservedSize: 44,
+              interval: chartMaxY / 3,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.max) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    _compactMoney(v),
+                    style: TextStyles.caption.copyWith(fontSize: 10),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
             ),
           ),
           bottomTitles: AxisTitles(
@@ -236,14 +344,7 @@ class _EmployeeBarChart extends StatelessWidget {
               getTitlesWidget: (v, _) {
                 final i = v.toInt();
                 if (i < 0 || i >= rows.length) return const SizedBox.shrink();
-                final label = rows[i].name;
-                final short =
-                    label.length > 8 ? '${label.substring(0, 7)}…' : label;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(short,
-                      style: TextStyles.caption.copyWith(fontSize: 10)),
-                );
+                return _shortName(rows[i].name);
               },
             ),
           ),
@@ -264,6 +365,164 @@ class _EmployeeBarChart extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _EmployeeBaChart extends StatelessWidget {
+  const _EmployeeBaChart({required this.rows});
+  final List<EmployeeBa> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxY = rows.map((e) => e.ba).fold<double>(0, (a, b) => a > b ? a : b);
+    final chartMaxY = (maxY <= 0 ? 40.0 : maxY * 1.15).clamp(40.0, 120.0);
+    return BarChart(
+      BarChartData(
+        maxY: chartMaxY,
+        gridData: const FlGridData(show: true, drawVerticalLine: false),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              interval: chartMaxY / 3,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.max) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    '${v.round()}%',
+                    style: TextStyles.caption.copyWith(fontSize: 10),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (v, _) {
+                final i = v.toInt();
+                if (i < 0 || i >= rows.length) return const SizedBox.shrink();
+                return _shortName(rows[i].name);
+              },
+            ),
+          ),
+        ),
+        barGroups: [
+          for (var i = 0; i < rows.length; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: rows[i].ba,
+                  color: AppColors.navy,
+                  width: 14,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(4)),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MembershipMixChart extends StatelessWidget {
+  const _MembershipMixChart({required this.rows});
+  final List<EmployeeWashMix> rows;
+
+  static const _singlesColor = Color(0xFF5B7C99);
+
+  @override
+  Widget build(BuildContext context) {
+    final maxY = rows
+        .map((e) => e.memberships > e.singles ? e.memberships : e.singles)
+        .fold<int>(0, (a, b) => a > b ? a : b)
+        .toDouble();
+    final chartMaxY = maxY <= 0 ? 1.0 : maxY * 1.2;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Memberships · Singles',
+          style: TextStyles.caption.copyWith(fontSize: 10),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: BarChart(
+            BarChartData(
+              maxY: chartMaxY,
+              gridData: const FlGridData(show: true, drawVerticalLine: false),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 32,
+                    interval: chartMaxY / 3,
+                    getTitlesWidget: (v, meta) {
+                      if (v == meta.max) return const SizedBox.shrink();
+                      return Text(
+                        '${v.round()}',
+                        style: TextStyles.caption.copyWith(fontSize: 10),
+                      );
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (v, _) {
+                      final i = v.toInt();
+                      if (i < 0 || i >= rows.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return _shortName(rows[i].name);
+                    },
+                  ),
+                ),
+              ),
+              barGroups: [
+                for (var i = 0; i < rows.length; i++)
+                  BarChartGroupData(
+                    x: i,
+                    barsSpace: 2,
+                    barRods: [
+                      BarChartRodData(
+                        toY: rows[i].memberships.toDouble(),
+                        color: AppColors.navy,
+                        width: 8,
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(3)),
+                      ),
+                      BarChartRodData(
+                        toY: rows[i].singles.toDouble(),
+                        color: _singlesColor,
+                        width: 8,
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(3)),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

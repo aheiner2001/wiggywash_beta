@@ -33,6 +33,8 @@ void main() {
     expect(stats.avgRevenuePerShift, 0);
     expect(stats.revenueByDay, isEmpty);
     expect(stats.employeeTotals, isEmpty);
+    expect(stats.employeeBa, isEmpty);
+    expect(stats.membershipMix, isEmpty);
   });
 
   test('summary and revenue-by-day use grandTotalRevenue', () {
@@ -83,5 +85,29 @@ void main() {
     );
     expect(stats.shiftCount, 1);
     expect(stats.employeeTotals.single.name, 'Alex');
+  });
+
+  test('employeeBa and membershipMix aggregate per employee', () {
+    final a = _sub(
+      name: 'Alex',
+      at: DateTime(2026, 7, 1, 10),
+      counts: const {'basic': 4},
+    );
+    final b = _sub(
+      name: 'Blake',
+      at: DateTime(2026, 7, 1, 12),
+      counts: const {'economy': 3},
+    );
+    final stats = buildMasterSheetStats(
+      submissions: [a, b],
+      rangeStart: start,
+      rangeEndExclusive: endExclusive,
+    );
+    expect(stats.employeeBa, isNotEmpty);
+    expect(stats.membershipMix, isNotEmpty);
+    final alexMix = stats.membershipMix.firstWhere((e) => e.name == 'Alex');
+    expect(alexMix.memberships, greaterThan(0));
+    final blakeMix = stats.membershipMix.firstWhere((e) => e.name == 'Blake');
+    expect(blakeMix.singles, greaterThan(0));
   });
 }
