@@ -118,6 +118,8 @@ class SuperAdminScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 96),
                 children: [
+                  _CompanyMigrationCard(),
+                  const SizedBox(height: 16),
                   const Text(
                     'Locations',
                     style: TextStyles.heading,
@@ -153,6 +155,65 @@ class SuperAdminScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _CompanyMigrationCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Company tenant migration', style: TextStyles.subheading),
+          const SizedBox(height: 6),
+          const Text(
+            'One-time: copy all root locations into companies/wiggy-wash '
+            'with company code WIGGY. Run once before employees use company-code login.',
+            style: TextStyles.caption,
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Migrate to company tenant?'),
+                  content: const Text(
+                    'Creates companies/wiggy-wash and copies every root '
+                    'location (with submissions, roster, config) underneath it. '
+                    'Safe to run once.',
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel')),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Migrate')),
+                  ],
+                ),
+              );
+              if (ok != true || !context.mounted) return;
+              final err = await Store.instance.migrateToCompany(
+                companyId: 'wiggy-wash',
+                companyName: 'Wiggy Wash',
+                companyCode: 'WIGGY',
+              );
+              if (!context.mounted) return;
+              showStoreMessage(
+                context,
+                err ?? 'Wiggy Wash migrated — employees can use code WIGGY',
+                error: err != null,
+              );
+            },
+            icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+            label: const Text('Migrate Wiggy Wash → company tenant'),
+          ),
+        ],
       ),
     );
   }

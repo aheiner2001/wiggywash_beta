@@ -223,7 +223,8 @@ class Store extends ChangeNotifier {
       if (isActingAsEmployee) return AppView.employee;
     }
     if (role == UserRole.platformAdmin) return AppView.platformAdmin;
-    if (role == UserRole.companyManager && _appUser!.locationId != null) {
+    if (role == UserRole.companyManager &&
+        (_appUser!.locationId != null || _appUser!.companyId != null)) {
       return AppView.manager;
     }
     // Signed in with Google but no role yet → stay on the manager-auth screen
@@ -386,6 +387,7 @@ class Store extends ChangeNotifier {
       _activeLocationId ??= _prefs?.getString(_kActiveLocation);
       _bindLocation(_activeLocationId);
     } else if (role == UserRole.companyManager) {
+      _activeCompanyId = _appUser!.companyId;
       _activeLocationId = _appUser!.locationId;
       await _cacheSingleLocation(_activeLocationId);
       _bindLocation(_activeLocationId);
@@ -485,6 +487,28 @@ class Store extends ChangeNotifier {
     await _prefs?.remove(_kEmployeeProfile);
     await _prefs?.remove(_kActiveCompany);
     await _prefs?.remove(_kEmployeeCompanyCode);
+    notifyListeners();
+  }
+
+  Future<bool> companyExists(String companyId) async {
+    try {
+      final doc = await _companiesCol.doc(companyId).get();
+      return doc.exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> setActiveCompany(String? companyId) async {
+    _activeCompanyId = companyId;
+    if (companyId != null) {
+      await _prefs?.setString(_kActiveCompany, companyId);
+      final doc = await _companiesCol.doc(companyId).get();
+      _activeCompany = doc.exists ? Company.fromDoc(doc) : null;
+    } else {
+      await _prefs?.remove(_kActiveCompany);
+      _activeCompany = null;
+    }
     notifyListeners();
   }
 
