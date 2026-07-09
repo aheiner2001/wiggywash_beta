@@ -620,6 +620,7 @@ class _MainPanel extends StatelessWidget {
     _SpreadsheetTable table({
       void Function(Submission)? onTap,
       _TablePart part = _TablePart.all,
+      _TablePane pane = _TablePane.full,
     }) =>
         _SpreadsheetTable(
           rows: rows
@@ -630,6 +631,7 @@ class _MainPanel extends StatelessWidget {
           firstColIsDate: isDaily,
           onTapRow: onTap,
           part: part,
+          pane: pane,
           hiddenColumnIds: const {},
           density: SheetDensity.comfortable,
         );
@@ -674,34 +676,20 @@ class _MainPanel extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                  child: table(part: _TablePart.header),
-                ),
-              ),
-              Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
-                      child: table(
-                        part: _TablePart.body,
-                        onTap: (s) =>
-                            isDaily ? onEdit(s) : onDrill(s.employeeName),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          child: _FrozenSheetScroller(
+            headerFrozen: table(part: _TablePart.header, pane: _TablePane.frozen),
+            headerMetrics:
+                table(part: _TablePart.header, pane: _TablePane.metrics),
+            bodyFrozen: table(
+              part: _TablePart.body,
+              pane: _TablePane.frozen,
+              onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+            ),
+            bodyMetrics: table(
+              part: _TablePart.body,
+              pane: _TablePane.metrics,
+              onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+            ),
           ),
         ),
       ],
@@ -709,7 +697,133 @@ class _MainPanel extends StatelessWidget {
   }
 }
 
+/// Linked freeze-pane scroller: sticky first column + synced header/body.
+class _FrozenSheetScroller extends StatefulWidget {
+  const _FrozenSheetScroller({
+    required this.headerFrozen,
+    required this.headerMetrics,
+    required this.bodyFrozen,
+    required this.bodyMetrics,
+  });
+
+  final Widget headerFrozen;
+  final Widget headerMetrics;
+  final Widget bodyFrozen;
+  final Widget bodyMetrics;
+
+  @override
+  State<_FrozenSheetScroller> createState() => _FrozenSheetScrollerState();
+}
+
+class _FrozenSheetScrollerState extends State<_FrozenSheetScroller> {
+  final _hHeader = ScrollController();
+  final _hBody = ScrollController();
+  final _vFrozen = ScrollController();
+  final _vBody = ScrollController();
+  bool _syncingH = false;
+  bool _syncingV = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hBody.addListener(() => _syncH(_hBody, _hHeader));
+    _hHeader.addListener(() => _syncH(_hHeader, _hBody));
+    _vBody.addListener(() => _syncV(_vBody, _vFrozen));
+    _vFrozen.addListener(() => _syncV(_vFrozen, _vBody));
+  }
+
+  void _syncH(ScrollController from, ScrollController to) {
+    if (_syncingH || !to.hasClients) return;
+    _syncingH = true;
+    to.jumpTo(from.offset.clamp(
+      to.position.minScrollExtent,
+      to.position.maxScrollExtent,
+    ));
+    _syncingH = false;
+  }
+
+  void _syncV(ScrollController from, ScrollController to) {
+    if (_syncingV || !to.hasClients) return;
+    _syncingV = true;
+    to.jumpTo(from.offset.clamp(
+      to.position.minScrollExtent,
+      to.position.maxScrollExtent,
+    ));
+    _syncingV = false;
+  }
+
+  @override
+  void dispose() {
+    _hHeader.dispose();
+    _hBody.dispose();
+    _vFrozen.dispose();
+    _vBody.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              widget.headerFrozen,
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context)
+                      .copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    controller: _vFrozen,
+                    child: widget.bodyFrozen,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Scrollbar(
+                  controller: _hHeader,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _hHeader,
+                    scrollDirection: Axis.horizontal,
+                    child: widget.headerMetrics,
+                  ),
+                ),
+                Expanded(
+                  child: Scrollbar(
+                    controller: _vBody,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _vBody,
+                      child: SingleChildScrollView(
+                        controller: _hBody,
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: widget.bodyMetrics,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 enum _TablePart { all, header, body }
+
+enum _TablePane { full, frozen, metrics }
 
 /// Clean spreadsheet grid (à la the BA MASTER DOC): fixed columns, gridlines,
 /// rotated headers, a point-value row, color-coded BA, and a totals row.
@@ -721,6 +835,7 @@ class _SpreadsheetTable extends StatefulWidget {
     required this.firstColIsDate,
     this.onTapRow,
     this.part = _TablePart.all,
+    this.pane = _TablePane.full,
     this.hiddenColumnIds = const {},
     this.density = SheetDensity.comfortable,
   });
@@ -731,6 +846,7 @@ class _SpreadsheetTable extends StatefulWidget {
   final bool firstColIsDate;
   final void Function(Submission)? onTapRow;
   final _TablePart part;
+  final _TablePane pane;
   final Set<String> hiddenColumnIds;
   final SheetDensity density;
 
@@ -780,19 +896,28 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
       if (_vis(SheetColumnId.revenue)) SheetColumnId.revenue,
     ];
 
-    final colWidths = <int, TableColumnWidth>{
-      0: const FixedColumnWidth(116),
-      for (var c = 0; c < metricIds.length; c++)
-        c + 1: FixedColumnWidth(
-          metricIds[c] == SheetColumnId.revenue
-              ? 82
-              : metricIds[c] == SheetColumnId.score
-                  ? 58
-                  : metricIds[c] == SheetColumnId.ba
-                      ? 54
-                      : 50,
-        ),
-    };
+    double metricWidth(String id) => id == SheetColumnId.revenue
+        ? 82
+        : id == SheetColumnId.score
+            ? 58
+            : id == SheetColumnId.ba
+                ? 54
+                : 50;
+
+    final colWidths = <int, TableColumnWidth>{};
+    switch (widget.pane) {
+      case _TablePane.frozen:
+        colWidths[0] = const FixedColumnWidth(116);
+      case _TablePane.metrics:
+        for (var c = 0; c < metricIds.length; c++) {
+          colWidths[c] = FixedColumnWidth(metricWidth(metricIds[c]));
+        }
+      case _TablePane.full:
+        colWidths[0] = const FixedColumnWidth(116);
+        for (var c = 0; c < metricIds.length; c++) {
+          colWidths[c + 1] = FixedColumnWidth(metricWidth(metricIds[c]));
+        }
+    }
 
     final tableRows = <TableRow>[];
     switch (widget.part) {
@@ -825,10 +950,21 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
     );
   }
 
+  List<Widget> _paneChildren(List<Widget> cells) {
+    switch (widget.pane) {
+      case _TablePane.full:
+        return cells;
+      case _TablePane.frozen:
+        return cells.isEmpty ? cells : [cells.first];
+      case _TablePane.metrics:
+        return cells.length <= 1 ? const [] : cells.sublist(1);
+    }
+  }
+
   TableRow _headerRow(List<LineItem> items) {
     return TableRow(
       decoration: const BoxDecoration(color: _headerBg),
-      children: [
+      children: _paneChildren([
         _firstHeader(widget.firstColIsDate ? 'Date' : 'Name'),
         if (_vis(SheetColumnId.talked)) _vHeader('Total Talked'),
         for (final i in items)
@@ -838,7 +974,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         if (_vis(SheetColumnId.ba)) _vHeader('BA %'),
         if (_vis(SheetColumnId.score)) _vHeader('Score'),
         if (_vis(SheetColumnId.revenue)) _vHeader('Revenue'),
-      ],
+      ]),
     );
   }
 
@@ -885,7 +1021,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         );
     return TableRow(
       decoration: const BoxDecoration(color: Color(0xFFEFF2F6)),
-      children: [
+      children: _paneChildren([
         Container(
           height: 24,
           alignment: Alignment.centerRight,
@@ -904,7 +1040,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         if (_vis(SheetColumnId.ba)) cell(''),
         if (_vis(SheetColumnId.score)) cell(''),
         if (_vis(SheetColumnId.revenue)) cell(''),
-      ],
+      ]),
     );
   }
 
@@ -994,7 +1130,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
             ? const Border(top: BorderSide(color: _gridColor, width: 2))
             : null,
       ),
-      children: [
+      children: _paneChildren([
         first,
         if (_vis(SheetColumnId.talked)) numCell('${s.talkedTo}'),
         for (final i in items)
@@ -1009,7 +1145,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
               color: isTop ? AppColors.success : AppColors.navy),
         if (_vis(SheetColumnId.revenue))
           numCell(_money.format(s.grandTotalRevenue), color: AppColors.success),
-      ],
+      ]),
     );
   }
 }
