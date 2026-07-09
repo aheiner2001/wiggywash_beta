@@ -51,7 +51,10 @@ service cloud.firestore {
 
       match /locations/{locationId} {
         allow read: if signedIn();
-        allow create, update: if canManageCompany(companyId);
+        // Real users may create a location during self-service company signup
+        // (role/companyId are written in the same batch; rules can't see them yet).
+        allow create: if canManageCompany(companyId) || isRealUser();
+        allow update: if canManageCompany(companyId);
         allow delete: if isPlatformAdmin();
 
         match /submissions/{doc} {
