@@ -11,9 +11,13 @@ import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
 import '../utils/master_sheet_stats.dart';
+import '../utils/sheet_column.dart';
+import '../utils/sheet_row_tools.dart';
+import '../utils/sheet_tools_prefs.dart';
 import '../utils/xlsx.dart';
 import '../widgets/master_sheet_trends.dart';
 import '../widgets/profile_menu.dart';
+import '../widgets/sheet_tools_bar.dart';
 import '../widgets/store_message.dart';
 import '../widgets/submission_editor.dart';
 import '../widgets/ui_kit.dart';
@@ -99,11 +103,14 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   bool _sidebarOpen = true;
   DateTimeRange? _customRange;
   MasterSheetLayout _layout = MasterSheetLayout.vertical;
+  SheetToolsPrefs _sheetPrefs = SheetToolsPrefs.defaults();
+  Set<String>? _selectedEmployees; // session-only
 
   @override
   void initState() {
     super.initState();
     _loadLayoutPref();
+    _loadSheetToolsPref();
   }
 
   Future<void> _loadLayoutPref() async {
@@ -113,6 +120,17 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
     if (raw == MasterSheetLayout.horizontal.name) {
       setState(() => _layout = MasterSheetLayout.horizontal);
     }
+  }
+
+  Future<void> _loadSheetToolsPref() async {
+    final p = await SheetToolsPrefs.load();
+    if (!mounted) return;
+    setState(() => _sheetPrefs = p);
+  }
+
+  Future<void> _setSheetPrefs(SheetToolsPrefs prefs) async {
+    setState(() => _sheetPrefs = prefs);
+    await SheetToolsPrefs.save(prefs);
   }
 
   Future<void> _setLayout(MasterSheetLayout layout) async {
@@ -389,6 +407,11 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                 scope: _scope,
                 stats: _stats,
                 layout: _layout,
+                sheetPrefs: _sheetPrefs,
+                selectedEmployees: _selectedEmployees,
+                onSheetPrefs: _setSheetPrefs,
+                onSelectedEmployees: (s) =>
+                    setState(() => _selectedEmployees = s),
                 onView: (v) => setState(() => _view = v),
                 onShift: _shift,
                 onMember: (m) => setState(() => _member = m),
@@ -443,6 +466,10 @@ class _MainPanel extends StatelessWidget {
     required this.scope,
     required this.stats,
     required this.layout,
+    required this.sheetPrefs,
+    required this.selectedEmployees,
+    required this.onSheetPrefs,
+    required this.onSelectedEmployees,
     required this.onView,
     required this.onShift,
     required this.onMember,
@@ -459,6 +486,10 @@ class _MainPanel extends StatelessWidget {
   final List<Submission> scope;
   final MasterSheetStats stats;
   final MasterSheetLayout layout;
+  final SheetToolsPrefs sheetPrefs;
+  final Set<String>? selectedEmployees;
+  final ValueChanged<SheetToolsPrefs> onSheetPrefs;
+  final ValueChanged<Set<String>?> onSelectedEmployees;
   final ValueChanged<_View> onView;
   final ValueChanged<int> onShift;
   final ValueChanged<String?> onMember;
@@ -607,28 +638,56 @@ class _MainPanel extends StatelessWidget {
       member: member,
       aggregate: aggregate,
     );
-    final rows = built.rows;
-    final totals = built.totals;
-    final topScore = rows.isEmpty
+    final visibleRows = applySheetRowTools(
+      rows: built.rows,
+      prefs: sheetPrefs,
+      selectedEmployees: selectedEmployees,
+      firstColIsDate: built.firstColIsDate,
+    );
+    final totals = totalsFromVisibleRows(
+      visible: visibleRows,
+      anchor: anchor,
+      aggregate: aggregate,
+    );
+    final topScore = visibleRows.isEmpty
         ? 0
-        : rows
+        : visibleRows
             .map((r) => r.submission.overallScore)
             .reduce((a, b) => a > b ? a : b);
     final title = built.rangeLabel;
+    final filterCount = activeFilterCount(
+      prefs: sheetPrefs,
+      selectedEmployees: selectedEmployees,
+      firstColIsDate: built.firstColIsDate,
+    );
+    final employeeNames = {
+      for (final s in scope) s.employeeName,
+    }.toList()
+      ..sort();
+
+    void clearFilters() {
+      onSelectedEmployees(null);
+      onSheetPrefs(sheetPrefs.copyWith(
+        clearMinBa: true,
+        clearMinRevenue: true,
+      ));
+    }
 
     _SpreadsheetTable table({
       void Function(Submission)? onTap,
       _TablePart part = _TablePart.all,
+      _TablePane pane = _TablePane.full,
     }) =>
         _SpreadsheetTable(
-          rows: rows
-              .map((r) => (r.label, r.submission))
-              .toList(),
+          rows: visibleRows.map((r) => (r.label, r.submission)).toList(),
           totals: totals,
           topScore: topScore,
           firstColIsDate: isDaily,
           onTapRow: onTap,
           part: part,
+          pane: pane,
+          hiddenColumnIds: sheetPrefs.hiddenColumnIds,
+          density: sheetPrefs.density,
         );
 
     final rangeText = customRange != null
@@ -640,8 +699,20 @@ class _MainPanel extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: SheetToolsBar(
+            prefs: sheetPrefs,
+            onPrefsChanged: onSheetPrefs,
+            employeeNames: employeeNames,
+            selectedEmployees: selectedEmployees,
+            onSelectedEmployeesChanged: onSelectedEmployees,
+            showEmployeeFilter: view == _View.team,
+            activeFilterCount: filterCount,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
           child: Text(
-            'Exporting ${rows.length} rows · $rangeText · $viewLabel',
+            'Showing ${visibleRows.length} of ${built.rows.length} rows · $rangeText · $viewLabel',
             style: TextStyles.caption,
           ),
         ),
@@ -670,43 +741,171 @@ class _MainPanel extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                  child: table(part: _TablePart.header),
-                ),
+        if (visibleRows.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('No rows match filters',
+                      style: TextStyles.subheading),
+                  const SizedBox(height: 8),
+                  TextButton(onPressed: clearFilters, child: const Text('Clear')),
+                ],
               ),
-              Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
-                      child: table(
-                        part: _TablePart.body,
-                        onTap: (s) =>
-                            isDaily ? onEdit(s) : onDrill(s.employeeName),
-                      ),
-                    ),
-                  ),
-                ),
+            ),
+          )
+        else
+          Expanded(
+            child: _FrozenSheetScroller(
+              headerFrozen:
+                  table(part: _TablePart.header, pane: _TablePane.frozen),
+              headerMetrics:
+                  table(part: _TablePart.header, pane: _TablePane.metrics),
+              bodyFrozen: table(
+                part: _TablePart.body,
+                pane: _TablePane.frozen,
+                onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
               ),
-            ],
+              bodyMetrics: table(
+                part: _TablePart.body,
+                pane: _TablePane.metrics,
+                onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+              ),
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
+/// Linked freeze-pane scroller: sticky first column + synced header/body.
+class _FrozenSheetScroller extends StatefulWidget {
+  const _FrozenSheetScroller({
+    required this.headerFrozen,
+    required this.headerMetrics,
+    required this.bodyFrozen,
+    required this.bodyMetrics,
+  });
+
+  final Widget headerFrozen;
+  final Widget headerMetrics;
+  final Widget bodyFrozen;
+  final Widget bodyMetrics;
+
+  @override
+  State<_FrozenSheetScroller> createState() => _FrozenSheetScrollerState();
+}
+
+class _FrozenSheetScrollerState extends State<_FrozenSheetScroller> {
+  final _hHeader = ScrollController();
+  final _hBody = ScrollController();
+  final _vFrozen = ScrollController();
+  final _vBody = ScrollController();
+  bool _syncingH = false;
+  bool _syncingV = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hBody.addListener(() => _syncH(_hBody, _hHeader));
+    _hHeader.addListener(() => _syncH(_hHeader, _hBody));
+    _vBody.addListener(() => _syncV(_vBody, _vFrozen));
+    _vFrozen.addListener(() => _syncV(_vFrozen, _vBody));
+  }
+
+  void _syncH(ScrollController from, ScrollController to) {
+    if (_syncingH || !to.hasClients) return;
+    _syncingH = true;
+    to.jumpTo(from.offset.clamp(
+      to.position.minScrollExtent,
+      to.position.maxScrollExtent,
+    ));
+    _syncingH = false;
+  }
+
+  void _syncV(ScrollController from, ScrollController to) {
+    if (_syncingV || !to.hasClients) return;
+    _syncingV = true;
+    to.jumpTo(from.offset.clamp(
+      to.position.minScrollExtent,
+      to.position.maxScrollExtent,
+    ));
+    _syncingV = false;
+  }
+
+  @override
+  void dispose() {
+    _hHeader.dispose();
+    _hBody.dispose();
+    _vFrozen.dispose();
+    _vBody.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              widget.headerFrozen,
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context)
+                      .copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    controller: _vFrozen,
+                    child: widget.bodyFrozen,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Scrollbar(
+                  controller: _hHeader,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _hHeader,
+                    scrollDirection: Axis.horizontal,
+                    child: widget.headerMetrics,
+                  ),
+                ),
+                Expanded(
+                  child: Scrollbar(
+                    controller: _vBody,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _vBody,
+                      child: SingleChildScrollView(
+                        controller: _hBody,
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: widget.bodyMetrics,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 enum _TablePart { all, header, body }
+
+enum _TablePane { full, frozen, metrics }
 
 /// Clean spreadsheet grid (à la the BA MASTER DOC): fixed columns, gridlines,
 /// rotated headers, a point-value row, color-coded BA, and a totals row.
@@ -718,6 +917,9 @@ class _SpreadsheetTable extends StatefulWidget {
     required this.firstColIsDate,
     this.onTapRow,
     this.part = _TablePart.all,
+    this.pane = _TablePane.full,
+    this.hiddenColumnIds = const {},
+    this.density = SheetDensity.comfortable,
   });
 
   final List<(String, Submission)> rows;
@@ -726,6 +928,9 @@ class _SpreadsheetTable extends StatefulWidget {
   final bool firstColIsDate;
   final void Function(Submission)? onTapRow;
   final _TablePart part;
+  final _TablePane pane;
+  final Set<String> hiddenColumnIds;
+  final SheetDensity density;
 
   @override
   State<_SpreadsheetTable> createState() => _SpreadsheetTableState();
@@ -734,37 +939,89 @@ class _SpreadsheetTable extends StatefulWidget {
 class _SpreadsheetTableState extends State<_SpreadsheetTable> {
   String? _hoveredLabel;
 
-  static const _gridColor = Color(0xFFD7DCE3);
+  static const _headerBg = Color(0xFFF4F6FA);
+  static const _headerFg = Color(0xFF74808F);
+  static const _gridColor = Color(0xFFE2E7EF);
+  static const _zebra = Color(0xFFFAFBFC);
+
+  bool _vis(String id) => !widget.hiddenColumnIds.contains(id);
+
+  double get _rowH => switch (widget.density) {
+        SheetDensity.comfortable => 40,
+        SheetDensity.compact => 32,
+        SheetDensity.dense => 26,
+      };
+
+  double get _headerH => switch (widget.density) {
+        SheetDensity.comfortable => 104,
+        SheetDensity.compact => 92,
+        SheetDensity.dense => 80,
+      };
+
+  double get _bodyFont => switch (widget.density) {
+        SheetDensity.comfortable => 12.5,
+        SheetDensity.compact => 12,
+        SheetDensity.dense => 11,
+      };
 
   @override
   Widget build(BuildContext context) {
     final items = kLineItems;
-    final numericCols = 1 + items.length + 2;
-    final colWidths = <int, TableColumnWidth>{
-      0: const FixedColumnWidth(116),
-      for (var c = 1; c <= numericCols; c++) c: const FixedColumnWidth(50),
-      numericCols + 1: const FixedColumnWidth(58),
-      numericCols + 2: const FixedColumnWidth(54),
-      numericCols + 3: const FixedColumnWidth(82),
-    };
+    final metricIds = <String>[
+      if (_vis(SheetColumnId.talked)) SheetColumnId.talked,
+      for (final i in items)
+        if (_vis(SheetColumnId.lineItem(i.id))) SheetColumnId.lineItem(i.id),
+      if (_vis(SheetColumnId.vip)) SheetColumnId.vip,
+      if (_vis(SheetColumnId.aboveEco)) SheetColumnId.aboveEco,
+      if (_vis(SheetColumnId.ba)) SheetColumnId.ba,
+      if (_vis(SheetColumnId.score)) SheetColumnId.score,
+      if (_vis(SheetColumnId.revenue)) SheetColumnId.revenue,
+    ];
+
+    double metricWidth(String id) => id == SheetColumnId.revenue
+        ? 82
+        : id == SheetColumnId.score
+            ? 58
+            : id == SheetColumnId.ba
+                ? 54
+                : 50;
+
+    final colWidths = <int, TableColumnWidth>{};
+    switch (widget.pane) {
+      case _TablePane.frozen:
+        colWidths[0] = const FixedColumnWidth(116);
+      case _TablePane.metrics:
+        for (var c = 0; c < metricIds.length; c++) {
+          colWidths[c] = FixedColumnWidth(metricWidth(metricIds[c]));
+        }
+      case _TablePane.full:
+        colWidths[0] = const FixedColumnWidth(116);
+        for (var c = 0; c < metricIds.length; c++) {
+          colWidths[c + 1] = FixedColumnWidth(metricWidth(metricIds[c]));
+        }
+    }
 
     final tableRows = <TableRow>[];
     switch (widget.part) {
       case _TablePart.all:
         tableRows.add(_headerRow(items));
         tableRows.add(_pointRow(items));
-        for (final r in widget.rows) {
-          tableRows.add(_dataRow(r.$1, r.$2));
+        for (var i = 0; i < widget.rows.length; i++) {
+          final r = widget.rows[i];
+          tableRows.add(_dataRow(r.$1, r.$2, rowIndex: i));
         }
-        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+        tableRows.add(
+            _dataRow('TOTALS', widget.totals, isTotal: true, rowIndex: 0));
       case _TablePart.header:
         tableRows.add(_headerRow(items));
         tableRows.add(_pointRow(items));
       case _TablePart.body:
-        for (final r in widget.rows) {
-          tableRows.add(_dataRow(r.$1, r.$2));
+        for (var i = 0; i < widget.rows.length; i++) {
+          final r = widget.rows[i];
+          tableRows.add(_dataRow(r.$1, r.$2, rowIndex: i));
         }
-        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+        tableRows.add(
+            _dataRow('TOTALS', widget.totals, isTotal: true, rowIndex: 0));
     }
 
     return Table(
@@ -775,35 +1032,47 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
     );
   }
 
+  List<Widget> _paneChildren(List<Widget> cells) {
+    switch (widget.pane) {
+      case _TablePane.full:
+        return cells;
+      case _TablePane.frozen:
+        return cells.isEmpty ? cells : [cells.first];
+      case _TablePane.metrics:
+        return cells.length <= 1 ? const [] : cells.sublist(1);
+    }
+  }
+
   TableRow _headerRow(List<LineItem> items) {
     return TableRow(
-      decoration: const BoxDecoration(color: AppColors.navy),
-      children: [
+      decoration: const BoxDecoration(color: _headerBg),
+      children: _paneChildren([
         _firstHeader(widget.firstColIsDate ? 'Date' : 'Name'),
-        _vHeader('Total Talked'),
-        for (final i in items) _vHeader(i.label),
-        _vHeader('Total VIP'),
-        _vHeader('Above Eco'),
-        _vHeader('BA %'),
-        _vHeader('Score'),
-        _vHeader('Revenue'),
-      ],
+        if (_vis(SheetColumnId.talked)) _vHeader('Total Talked'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id))) _vHeader(i.label),
+        if (_vis(SheetColumnId.vip)) _vHeader('Total VIP'),
+        if (_vis(SheetColumnId.aboveEco)) _vHeader('Above Eco'),
+        if (_vis(SheetColumnId.ba)) _vHeader('BA %'),
+        if (_vis(SheetColumnId.score)) _vHeader('Score'),
+        if (_vis(SheetColumnId.revenue)) _vHeader('Revenue'),
+      ]),
     );
   }
 
   Widget _firstHeader(String text) => Container(
-        height: 104,
+        height: _headerH,
         alignment: Alignment.bottomLeft,
         padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
         child: Text(text,
             style: const TextStyle(
-                color: Colors.white,
+                color: _headerFg,
                 fontWeight: FontWeight.w800,
                 fontSize: 13)),
       );
 
   Widget _vHeader(String text) => SizedBox(
-        height: 104,
+        height: _headerH,
         child: Center(
           child: RotatedBox(
             quarterTurns: 3,
@@ -814,7 +1083,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      color: Colors.white,
+                      color: _headerFg,
                       fontWeight: FontWeight.w700,
                       fontSize: 11)),
             ),
@@ -834,7 +1103,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         );
     return TableRow(
       decoration: const BoxDecoration(color: Color(0xFFEFF2F6)),
-      children: [
+      children: _paneChildren([
         Container(
           height: 24,
           alignment: Alignment.centerRight,
@@ -845,18 +1114,20 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                   fontStyle: FontStyle.italic,
                   color: Colors.black54)),
         ),
-        cell('$kTalkedToPoints'),
-        for (final i in items) cell('${pointOf(i)}'),
-        cell(''),
-        cell(''),
-        cell(''),
-        cell(''),
-        cell(''),
-      ],
+        if (_vis(SheetColumnId.talked)) cell('$kTalkedToPoints'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id))) cell('${pointOf(i)}'),
+        if (_vis(SheetColumnId.vip)) cell(''),
+        if (_vis(SheetColumnId.aboveEco)) cell(''),
+        if (_vis(SheetColumnId.ba)) cell(''),
+        if (_vis(SheetColumnId.score)) cell(''),
+        if (_vis(SheetColumnId.revenue)) cell(''),
+      ]),
     );
   }
 
-  TableRow _dataRow(String label, Submission s, {bool isTotal = false}) {
+  TableRow _dataRow(String label, Submission s,
+      {bool isTotal = false, required int rowIndex}) {
     final items = kLineItems;
     final ba = s.businessAverage;
     final goal = s.baGoal > 0 ? s.baGoal : 40.0;
@@ -864,18 +1135,21 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         !isTotal && s.overallScore == widget.topScore && widget.topScore > 0;
     final isHovered = kIsWeb && _hoveredLabel == label;
     final w = isTotal ? FontWeight.w900 : FontWeight.w600;
+    final zebraBg = rowIndex.isOdd ? _zebra : Colors.white;
     final rowColor = isTotal
         ? AppColors.blueSoft
         : (isTop
             ? const Color(0xFFEAF6EF)
-            : (isHovered ? AppColors.blueSoft.withValues(alpha: 0.5) : Colors.white));
+            : (isHovered
+                ? AppColors.blueSoft.withValues(alpha: 0.5)
+                : zebraBg));
 
     Widget numCell(String v, {Color? color, FontWeight? weight}) => Container(
-          height: 34,
+          height: _rowH,
           alignment: Alignment.center,
           child: Text(v,
               style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: _bodyFont,
                   fontWeight: weight ?? w,
                   color: color ?? AppColors.navy)),
         );
@@ -890,9 +1164,13 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
             ? (hover) => setState(() => _hoveredLabel = hover ? label : null)
             : null,
         child: Container(
-          height: 34,
+          height: _rowH,
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: isTotal
+              ? const BoxDecoration(
+                  border: Border(top: BorderSide(color: _gridColor, width: 2)))
+              : null,
           child: Row(
             children: [
               if (isTop)
@@ -905,9 +1183,9 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                 child: Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
+                        fontSize: _bodyFont,
                         color: AppColors.navy)),
               ),
             ],
@@ -917,30 +1195,39 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
     );
 
     final baCell = Container(
-      height: 34,
+      height: _rowH,
       alignment: Alignment.center,
       color: baColor(ba, goal).withValues(alpha: 0.18),
       child: Text('${ba.toStringAsFixed(0)}%',
           style: TextStyle(
-              fontSize: 12.5,
+              fontSize: _bodyFont,
               fontWeight: FontWeight.w800,
               color: baColor(ba, goal))),
     );
 
     return TableRow(
-      decoration: BoxDecoration(color: rowColor),
-      children: [
+      decoration: BoxDecoration(
+        color: rowColor,
+        border: isTotal
+            ? const Border(top: BorderSide(color: _gridColor, width: 2))
+            : null,
+      ),
+      children: _paneChildren([
         first,
-        numCell('${s.talkedTo}'),
-        for (final i in items) numCell('${s.countOf(i.id)}'),
-        numCell('${s.totalMemberships}'),
-        numCell('${s.aboveEco}'),
-        baCell,
-        numCell('${s.overallScore}',
-            weight: FontWeight.w900,
-            color: isTop ? AppColors.success : AppColors.navy),
-        numCell(_money.format(s.grandTotalRevenue), color: AppColors.success),
-      ],
+        if (_vis(SheetColumnId.talked)) numCell('${s.talkedTo}'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id)))
+            numCell('${s.countOf(i.id)}'),
+        if (_vis(SheetColumnId.vip)) numCell('${s.totalMemberships}'),
+        if (_vis(SheetColumnId.aboveEco)) numCell('${s.aboveEco}'),
+        if (_vis(SheetColumnId.ba)) baCell,
+        if (_vis(SheetColumnId.score))
+          numCell('${s.overallScore}',
+              weight: FontWeight.w900,
+              color: isTop ? AppColors.success : AppColors.navy),
+        if (_vis(SheetColumnId.revenue))
+          numCell(_money.format(s.grandTotalRevenue), color: AppColors.success),
+      ]),
     );
   }
 }
