@@ -157,6 +157,9 @@ class Store extends ChangeNotifier {
     for (final l in _locations) {
       if (l.id == _activeLocationId) return l;
     }
+    for (final l in _companyLocations) {
+      if (l.id == _activeLocationId) return l;
+    }
     return null;
   }
 
@@ -312,6 +315,9 @@ class Store extends ChangeNotifier {
       final companyId = map['companyId'] as String?;
       if (companyId != null && companyId.isNotEmpty) {
         _activeCompanyId = companyId;
+      }
+      if (_employeeLocationId != null) {
+        _activeLocationId = _employeeLocationId;
       }
     } catch (_) {
       _employeeName = null;

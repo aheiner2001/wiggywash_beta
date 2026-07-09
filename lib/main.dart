@@ -5,7 +5,7 @@ import 'firebase_options.dart';
 import 'screens/manager_auth_screen.dart';
 import 'screens/manager_screen.dart';
 import 'screens/scorecard_screen.dart';
-import 'screens/site_code_screen.dart';
+import 'screens/company_login_screen.dart';
 import 'screens/super_admin_screen.dart';
 import 'services/store.dart';
 import 'theme.dart';
@@ -54,7 +54,7 @@ class _Root extends StatelessWidget {
           case AppView.loading:
             return const _Splash();
           case AppView.landing:
-            return const SiteCodeScreen();
+            return const CompanyLoginScreen();
           case AppView.managerAuth:
             return const ManagerAuthScreen();
           case AppView.employee:
