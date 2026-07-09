@@ -347,7 +347,6 @@ class _EmployeeBarChart extends StatelessWidget {
     return BarChart(
       BarChartData(
         maxY: chartMaxY,
-        clipData: const FlClipData.all(),
         alignment: BarChartAlignment.spaceAround,
         gridData: FlGridData(
           show: true,
@@ -424,7 +423,6 @@ class _EmployeeBaChart extends StatelessWidget {
     return BarChart(
       BarChartData(
         maxY: chartMaxY,
-        clipData: const FlClipData.all(),
         alignment: BarChartAlignment.spaceAround,
         gridData: FlGridData(
           show: true,
@@ -514,7 +512,6 @@ class _MembershipMixChart extends StatelessWidget {
           child: BarChart(
             BarChartData(
               maxY: chartMaxY,
-              clipData: const FlClipData.all(),
               alignment: BarChartAlignment.spaceAround,
               gridData: FlGridData(
                 show: true,
