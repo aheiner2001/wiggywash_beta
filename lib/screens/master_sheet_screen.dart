@@ -12,9 +12,12 @@ import '../utils/csv.dart';
 import '../utils/exporter.dart';
 import '../utils/master_sheet_stats.dart';
 import '../utils/sheet_column.dart';
+import '../utils/sheet_row_tools.dart';
+import '../utils/sheet_tools_prefs.dart';
 import '../utils/xlsx.dart';
 import '../widgets/master_sheet_trends.dart';
 import '../widgets/profile_menu.dart';
+import '../widgets/sheet_tools_bar.dart';
 import '../widgets/store_message.dart';
 import '../widgets/submission_editor.dart';
 import '../widgets/ui_kit.dart';
@@ -100,11 +103,14 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   bool _sidebarOpen = true;
   DateTimeRange? _customRange;
   MasterSheetLayout _layout = MasterSheetLayout.vertical;
+  SheetToolsPrefs _sheetPrefs = SheetToolsPrefs.defaults();
+  Set<String>? _selectedEmployees; // session-only
 
   @override
   void initState() {
     super.initState();
     _loadLayoutPref();
+    _loadSheetToolsPref();
   }
 
   Future<void> _loadLayoutPref() async {
@@ -114,6 +120,17 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
     if (raw == MasterSheetLayout.horizontal.name) {
       setState(() => _layout = MasterSheetLayout.horizontal);
     }
+  }
+
+  Future<void> _loadSheetToolsPref() async {
+    final p = await SheetToolsPrefs.load();
+    if (!mounted) return;
+    setState(() => _sheetPrefs = p);
+  }
+
+  Future<void> _setSheetPrefs(SheetToolsPrefs prefs) async {
+    setState(() => _sheetPrefs = prefs);
+    await SheetToolsPrefs.save(prefs);
   }
 
   Future<void> _setLayout(MasterSheetLayout layout) async {
@@ -390,6 +407,11 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                 scope: _scope,
                 stats: _stats,
                 layout: _layout,
+                sheetPrefs: _sheetPrefs,
+                selectedEmployees: _selectedEmployees,
+                onSheetPrefs: _setSheetPrefs,
+                onSelectedEmployees: (s) =>
+                    setState(() => _selectedEmployees = s),
                 onView: (v) => setState(() => _view = v),
                 onShift: _shift,
                 onMember: (m) => setState(() => _member = m),
@@ -444,6 +466,10 @@ class _MainPanel extends StatelessWidget {
     required this.scope,
     required this.stats,
     required this.layout,
+    required this.sheetPrefs,
+    required this.selectedEmployees,
+    required this.onSheetPrefs,
+    required this.onSelectedEmployees,
     required this.onView,
     required this.onShift,
     required this.onMember,
@@ -460,6 +486,10 @@ class _MainPanel extends StatelessWidget {
   final List<Submission> scope;
   final MasterSheetStats stats;
   final MasterSheetLayout layout;
+  final SheetToolsPrefs sheetPrefs;
+  final Set<String>? selectedEmployees;
+  final ValueChanged<SheetToolsPrefs> onSheetPrefs;
+  final ValueChanged<Set<String>?> onSelectedEmployees;
   final ValueChanged<_View> onView;
   final ValueChanged<int> onShift;
   final ValueChanged<String?> onMember;
@@ -608,14 +638,40 @@ class _MainPanel extends StatelessWidget {
       member: member,
       aggregate: aggregate,
     );
-    final rows = built.rows;
-    final totals = built.totals;
-    final topScore = rows.isEmpty
+    final visibleRows = applySheetRowTools(
+      rows: built.rows,
+      prefs: sheetPrefs,
+      selectedEmployees: selectedEmployees,
+      firstColIsDate: built.firstColIsDate,
+    );
+    final totals = totalsFromVisibleRows(
+      visible: visibleRows,
+      anchor: anchor,
+      aggregate: aggregate,
+    );
+    final topScore = visibleRows.isEmpty
         ? 0
-        : rows
+        : visibleRows
             .map((r) => r.submission.overallScore)
             .reduce((a, b) => a > b ? a : b);
     final title = built.rangeLabel;
+    final filterCount = activeFilterCount(
+      prefs: sheetPrefs,
+      selectedEmployees: selectedEmployees,
+      firstColIsDate: built.firstColIsDate,
+    );
+    final employeeNames = {
+      for (final s in scope) s.employeeName,
+    }.toList()
+      ..sort();
+
+    void clearFilters() {
+      onSelectedEmployees(null);
+      onSheetPrefs(sheetPrefs.copyWith(
+        clearMinBa: true,
+        clearMinRevenue: true,
+      ));
+    }
 
     _SpreadsheetTable table({
       void Function(Submission)? onTap,
@@ -623,17 +679,15 @@ class _MainPanel extends StatelessWidget {
       _TablePane pane = _TablePane.full,
     }) =>
         _SpreadsheetTable(
-          rows: rows
-              .map((r) => (r.label, r.submission))
-              .toList(),
+          rows: visibleRows.map((r) => (r.label, r.submission)).toList(),
           totals: totals,
           topScore: topScore,
           firstColIsDate: isDaily,
           onTapRow: onTap,
           part: part,
           pane: pane,
-          hiddenColumnIds: const {},
-          density: SheetDensity.comfortable,
+          hiddenColumnIds: sheetPrefs.hiddenColumnIds,
+          density: sheetPrefs.density,
         );
 
     final rangeText = customRange != null
@@ -645,8 +699,20 @@ class _MainPanel extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: SheetToolsBar(
+            prefs: sheetPrefs,
+            onPrefsChanged: onSheetPrefs,
+            employeeNames: employeeNames,
+            selectedEmployees: selectedEmployees,
+            onSelectedEmployeesChanged: onSelectedEmployees,
+            showEmployeeFilter: view == _View.team,
+            activeFilterCount: filterCount,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
           child: Text(
-            'Exporting ${rows.length} rows · $rangeText · $viewLabel',
+            'Showing ${visibleRows.length} of ${built.rows.length} rows · $rangeText · $viewLabel',
             style: TextStyles.caption,
           ),
         ),
@@ -675,23 +741,39 @@ class _MainPanel extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: _FrozenSheetScroller(
-            headerFrozen: table(part: _TablePart.header, pane: _TablePane.frozen),
-            headerMetrics:
-                table(part: _TablePart.header, pane: _TablePane.metrics),
-            bodyFrozen: table(
-              part: _TablePart.body,
-              pane: _TablePane.frozen,
-              onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+        if (visibleRows.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('No rows match filters',
+                      style: TextStyles.subheading),
+                  const SizedBox(height: 8),
+                  TextButton(onPressed: clearFilters, child: const Text('Clear')),
+                ],
+              ),
             ),
-            bodyMetrics: table(
-              part: _TablePart.body,
-              pane: _TablePane.metrics,
-              onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+          )
+        else
+          Expanded(
+            child: _FrozenSheetScroller(
+              headerFrozen:
+                  table(part: _TablePart.header, pane: _TablePane.frozen),
+              headerMetrics:
+                  table(part: _TablePart.header, pane: _TablePane.metrics),
+              bodyFrozen: table(
+                part: _TablePart.body,
+                pane: _TablePane.frozen,
+                onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+              ),
+              bodyMetrics: table(
+                part: _TablePart.body,
+                pane: _TablePane.metrics,
+                onTap: (s) => isDaily ? onEdit(s) : onDrill(s.employeeName),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
