@@ -5,7 +5,6 @@ import '../screens/master_sheet_screen.dart';
 import '../screens/pricing_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/team_screen.dart';
-import '../theme.dart';
 
 /// Manager navigation — sidebar on desktop, bottom bar on mobile.
 class ManagerShell extends StatefulWidget {
