@@ -13,16 +13,27 @@ service cloud.firestore {
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+    function isPlatformAdmin() {
+      return signedIn() && (userDoc().role == 'platformAdmin' || userDoc().role == 'superAdmin');
+    }
     function isSuperAdmin() {
-      return signedIn() && userDoc().role == 'superAdmin';
+      return signedIn() && (userDoc().role == 'superAdmin' || userDoc().role == 'platformAdmin');
     }
     function isManagerOf(locationId) {
       return signedIn()
         && userDoc().role == 'manager'
         && userDoc().locationId == locationId;
     }
+    function isCompanyManager(companyId) {
+      return signedIn()
+        && (userDoc().role == 'companyManager' || userDoc().role == 'manager')
+        && userDoc().companyId == companyId;
+    }
     function canManage(locationId) {
       return isManagerOf(locationId) || isSuperAdmin();
+    }
+    function canManageCompany(companyId) {
+      return isPlatformAdmin() || isCompanyManager(companyId);
     }
     // A real (non-anonymous) account — i.e. a Google manager/super admin,
     // not an anonymous employee session.
@@ -31,7 +42,38 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
-    // ===== Wiggy Wash: location-scoped data =====
+    // ===== Wiggy Wash: company-scoped data =====
+    match /companies/{companyId} {
+      allow read: if signedIn();
+      allow create: if isRealUser();
+      allow update: if canManageCompany(companyId) || isPlatformAdmin();
+      allow delete: if isPlatformAdmin();
+
+      match /locations/{locationId} {
+        allow read: if signedIn();
+        allow create, update: if canManageCompany(companyId);
+        allow delete: if isPlatformAdmin();
+
+        match /submissions/{doc} {
+          allow read, create, update: if signedIn();
+          allow delete: if canManageCompany(companyId);
+        }
+        match /workers/{doc} {
+          allow read: if signedIn();
+          allow write: if canManageCompany(companyId);
+        }
+        match /config/{doc} {
+          allow read: if signedIn();
+          allow write: if canManageCompany(companyId);
+        }
+        match /challenges/{doc} {
+          allow read: if signedIn();
+          allow write: if canManageCompany(companyId);
+        }
+      }
+    }
+
+    // ===== Wiggy Wash: location-scoped data (legacy — migration window) =====
     match /locations/{locationId} {
       allow read: if signedIn();
       // A manager creates their site during account creation (before a role is
