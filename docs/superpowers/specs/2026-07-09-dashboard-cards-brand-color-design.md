@@ -1,7 +1,7 @@
 # Dashboard Cards + Brand Color Settings — Design Spec
 
 **Date:** 2026-07-09  
-**Status:** Draft (awaiting user review)  
+**Status:** Approved (pending final review of written spec)  
 **Approach:** Dashboard List/Cards toggle + company-wide accent color via Settings (Approach 1)
 
 ## Summary
