@@ -125,6 +125,7 @@ class _TeamScreenState extends State<TeamScreen> {
     if (companyId != null) {
       await Store.instance.previewCompany(companyId);
     }
+    if (!mounted) return;
     showStoreMessage(context, 'Location added');
   }
 
@@ -245,7 +246,8 @@ class _TeamScreenState extends State<TeamScreen> {
                   if (locations.length > 1) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: Store.instance.activeLocationId,
+                      key: ValueKey(Store.instance.activeLocationId),
+                      initialValue: Store.instance.activeLocationId,
                       decoration: const InputDecoration(
                         labelText: 'Active location',
                         isDense: true,
