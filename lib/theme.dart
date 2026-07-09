@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Central design system for Wiggy Wash. Mirrors the physical scorecard:
 /// white background, soft rose/pink section headers, blue tally boxes, and
@@ -58,8 +59,9 @@ ThemeData buildTheme() {
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: AppColors.background,
-    fontFamily: 'Roboto',
+    scaffoldBackgroundColor: Colors.white,
+    fontFamily: GoogleFonts.inter().fontFamily,
+    textTheme: GoogleFonts.interTextTheme(),
   );
 
   return base.copyWith(
