@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
 import '../utils/master_sheet_stats.dart';
+import '../utils/sheet_column.dart';
 import '../utils/xlsx.dart';
 import '../widgets/master_sheet_trends.dart';
 import '../widgets/profile_menu.dart';
@@ -629,6 +630,8 @@ class _MainPanel extends StatelessWidget {
           firstColIsDate: isDaily,
           onTapRow: onTap,
           part: part,
+          hiddenColumnIds: const {},
+          density: SheetDensity.comfortable,
         );
 
     final rangeText = customRange != null
@@ -718,6 +721,8 @@ class _SpreadsheetTable extends StatefulWidget {
     required this.firstColIsDate,
     this.onTapRow,
     this.part = _TablePart.all,
+    this.hiddenColumnIds = const {},
+    this.density = SheetDensity.comfortable,
   });
 
   final List<(String, Submission)> rows;
@@ -726,6 +731,8 @@ class _SpreadsheetTable extends StatefulWidget {
   final bool firstColIsDate;
   final void Function(Submission)? onTapRow;
   final _TablePart part;
+  final Set<String> hiddenColumnIds;
+  final SheetDensity density;
 
   @override
   State<_SpreadsheetTable> createState() => _SpreadsheetTableState();
@@ -734,18 +741,57 @@ class _SpreadsheetTable extends StatefulWidget {
 class _SpreadsheetTableState extends State<_SpreadsheetTable> {
   String? _hoveredLabel;
 
-  static const _gridColor = Color(0xFFD7DCE3);
+  static const _headerBg = Color(0xFFF4F6FA);
+  static const _headerFg = Color(0xFF74808F);
+  static const _gridColor = Color(0xFFE2E7EF);
+  static const _zebra = Color(0xFFFAFBFC);
+
+  bool _vis(String id) => !widget.hiddenColumnIds.contains(id);
+
+  double get _rowH => switch (widget.density) {
+        SheetDensity.comfortable => 40,
+        SheetDensity.compact => 32,
+        SheetDensity.dense => 26,
+      };
+
+  double get _headerH => switch (widget.density) {
+        SheetDensity.comfortable => 104,
+        SheetDensity.compact => 92,
+        SheetDensity.dense => 80,
+      };
+
+  double get _bodyFont => switch (widget.density) {
+        SheetDensity.comfortable => 12.5,
+        SheetDensity.compact => 12,
+        SheetDensity.dense => 11,
+      };
 
   @override
   Widget build(BuildContext context) {
     final items = kLineItems;
-    final numericCols = 1 + items.length + 2;
+    final metricIds = <String>[
+      if (_vis(SheetColumnId.talked)) SheetColumnId.talked,
+      for (final i in items)
+        if (_vis(SheetColumnId.lineItem(i.id))) SheetColumnId.lineItem(i.id),
+      if (_vis(SheetColumnId.vip)) SheetColumnId.vip,
+      if (_vis(SheetColumnId.aboveEco)) SheetColumnId.aboveEco,
+      if (_vis(SheetColumnId.ba)) SheetColumnId.ba,
+      if (_vis(SheetColumnId.score)) SheetColumnId.score,
+      if (_vis(SheetColumnId.revenue)) SheetColumnId.revenue,
+    ];
+
     final colWidths = <int, TableColumnWidth>{
       0: const FixedColumnWidth(116),
-      for (var c = 1; c <= numericCols; c++) c: const FixedColumnWidth(50),
-      numericCols + 1: const FixedColumnWidth(58),
-      numericCols + 2: const FixedColumnWidth(54),
-      numericCols + 3: const FixedColumnWidth(82),
+      for (var c = 0; c < metricIds.length; c++)
+        c + 1: FixedColumnWidth(
+          metricIds[c] == SheetColumnId.revenue
+              ? 82
+              : metricIds[c] == SheetColumnId.score
+                  ? 58
+                  : metricIds[c] == SheetColumnId.ba
+                      ? 54
+                      : 50,
+        ),
     };
 
     final tableRows = <TableRow>[];
@@ -753,18 +799,22 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
       case _TablePart.all:
         tableRows.add(_headerRow(items));
         tableRows.add(_pointRow(items));
-        for (final r in widget.rows) {
-          tableRows.add(_dataRow(r.$1, r.$2));
+        for (var i = 0; i < widget.rows.length; i++) {
+          final r = widget.rows[i];
+          tableRows.add(_dataRow(r.$1, r.$2, rowIndex: i));
         }
-        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+        tableRows.add(
+            _dataRow('TOTALS', widget.totals, isTotal: true, rowIndex: 0));
       case _TablePart.header:
         tableRows.add(_headerRow(items));
         tableRows.add(_pointRow(items));
       case _TablePart.body:
-        for (final r in widget.rows) {
-          tableRows.add(_dataRow(r.$1, r.$2));
+        for (var i = 0; i < widget.rows.length; i++) {
+          final r = widget.rows[i];
+          tableRows.add(_dataRow(r.$1, r.$2, rowIndex: i));
         }
-        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+        tableRows.add(
+            _dataRow('TOTALS', widget.totals, isTotal: true, rowIndex: 0));
     }
 
     return Table(
@@ -777,33 +827,34 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
 
   TableRow _headerRow(List<LineItem> items) {
     return TableRow(
-      decoration: const BoxDecoration(color: AppColors.navy),
+      decoration: const BoxDecoration(color: _headerBg),
       children: [
         _firstHeader(widget.firstColIsDate ? 'Date' : 'Name'),
-        _vHeader('Total Talked'),
-        for (final i in items) _vHeader(i.label),
-        _vHeader('Total VIP'),
-        _vHeader('Above Eco'),
-        _vHeader('BA %'),
-        _vHeader('Score'),
-        _vHeader('Revenue'),
+        if (_vis(SheetColumnId.talked)) _vHeader('Total Talked'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id))) _vHeader(i.label),
+        if (_vis(SheetColumnId.vip)) _vHeader('Total VIP'),
+        if (_vis(SheetColumnId.aboveEco)) _vHeader('Above Eco'),
+        if (_vis(SheetColumnId.ba)) _vHeader('BA %'),
+        if (_vis(SheetColumnId.score)) _vHeader('Score'),
+        if (_vis(SheetColumnId.revenue)) _vHeader('Revenue'),
       ],
     );
   }
 
   Widget _firstHeader(String text) => Container(
-        height: 104,
+        height: _headerH,
         alignment: Alignment.bottomLeft,
         padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
         child: Text(text,
             style: const TextStyle(
-                color: Colors.white,
+                color: _headerFg,
                 fontWeight: FontWeight.w800,
                 fontSize: 13)),
       );
 
   Widget _vHeader(String text) => SizedBox(
-        height: 104,
+        height: _headerH,
         child: Center(
           child: RotatedBox(
             quarterTurns: 3,
@@ -814,7 +865,7 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      color: Colors.white,
+                      color: _headerFg,
                       fontWeight: FontWeight.w700,
                       fontSize: 11)),
             ),
@@ -845,18 +896,20 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                   fontStyle: FontStyle.italic,
                   color: Colors.black54)),
         ),
-        cell('$kTalkedToPoints'),
-        for (final i in items) cell('${pointOf(i)}'),
-        cell(''),
-        cell(''),
-        cell(''),
-        cell(''),
-        cell(''),
+        if (_vis(SheetColumnId.talked)) cell('$kTalkedToPoints'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id))) cell('${pointOf(i)}'),
+        if (_vis(SheetColumnId.vip)) cell(''),
+        if (_vis(SheetColumnId.aboveEco)) cell(''),
+        if (_vis(SheetColumnId.ba)) cell(''),
+        if (_vis(SheetColumnId.score)) cell(''),
+        if (_vis(SheetColumnId.revenue)) cell(''),
       ],
     );
   }
 
-  TableRow _dataRow(String label, Submission s, {bool isTotal = false}) {
+  TableRow _dataRow(String label, Submission s,
+      {bool isTotal = false, required int rowIndex}) {
     final items = kLineItems;
     final ba = s.businessAverage;
     final goal = s.baGoal > 0 ? s.baGoal : 40.0;
@@ -864,18 +917,21 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
         !isTotal && s.overallScore == widget.topScore && widget.topScore > 0;
     final isHovered = kIsWeb && _hoveredLabel == label;
     final w = isTotal ? FontWeight.w900 : FontWeight.w600;
+    final zebraBg = rowIndex.isOdd ? _zebra : Colors.white;
     final rowColor = isTotal
         ? AppColors.blueSoft
         : (isTop
             ? const Color(0xFFEAF6EF)
-            : (isHovered ? AppColors.blueSoft.withValues(alpha: 0.5) : Colors.white));
+            : (isHovered
+                ? AppColors.blueSoft.withValues(alpha: 0.5)
+                : zebraBg));
 
     Widget numCell(String v, {Color? color, FontWeight? weight}) => Container(
-          height: 34,
+          height: _rowH,
           alignment: Alignment.center,
           child: Text(v,
               style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: _bodyFont,
                   fontWeight: weight ?? w,
                   color: color ?? AppColors.navy)),
         );
@@ -890,9 +946,13 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
             ? (hover) => setState(() => _hoveredLabel = hover ? label : null)
             : null,
         child: Container(
-          height: 34,
+          height: _rowH,
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: isTotal
+              ? const BoxDecoration(
+                  border: Border(top: BorderSide(color: _gridColor, width: 2)))
+              : null,
           child: Row(
             children: [
               if (isTop)
@@ -905,9 +965,9 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
                 child: Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
+                        fontSize: _bodyFont,
                         color: AppColors.navy)),
               ),
             ],
@@ -917,29 +977,38 @@ class _SpreadsheetTableState extends State<_SpreadsheetTable> {
     );
 
     final baCell = Container(
-      height: 34,
+      height: _rowH,
       alignment: Alignment.center,
       color: baColor(ba, goal).withValues(alpha: 0.18),
       child: Text('${ba.toStringAsFixed(0)}%',
           style: TextStyle(
-              fontSize: 12.5,
+              fontSize: _bodyFont,
               fontWeight: FontWeight.w800,
               color: baColor(ba, goal))),
     );
 
     return TableRow(
-      decoration: BoxDecoration(color: rowColor),
+      decoration: BoxDecoration(
+        color: rowColor,
+        border: isTotal
+            ? const Border(top: BorderSide(color: _gridColor, width: 2))
+            : null,
+      ),
       children: [
         first,
-        numCell('${s.talkedTo}'),
-        for (final i in items) numCell('${s.countOf(i.id)}'),
-        numCell('${s.totalMemberships}'),
-        numCell('${s.aboveEco}'),
-        baCell,
-        numCell('${s.overallScore}',
-            weight: FontWeight.w900,
-            color: isTop ? AppColors.success : AppColors.navy),
-        numCell(_money.format(s.grandTotalRevenue), color: AppColors.success),
+        if (_vis(SheetColumnId.talked)) numCell('${s.talkedTo}'),
+        for (final i in items)
+          if (_vis(SheetColumnId.lineItem(i.id)))
+            numCell('${s.countOf(i.id)}'),
+        if (_vis(SheetColumnId.vip)) numCell('${s.totalMemberships}'),
+        if (_vis(SheetColumnId.aboveEco)) numCell('${s.aboveEco}'),
+        if (_vis(SheetColumnId.ba)) baCell,
+        if (_vis(SheetColumnId.score))
+          numCell('${s.overallScore}',
+              weight: FontWeight.w900,
+              color: isTop ? AppColors.success : AppColors.navy),
+        if (_vis(SheetColumnId.revenue))
+          numCell(_money.format(s.grandTotalRevenue), color: AppColors.success),
       ],
     );
   }
