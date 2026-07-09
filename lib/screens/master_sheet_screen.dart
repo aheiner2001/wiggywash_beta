@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
@@ -9,11 +10,17 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
+import '../utils/master_sheet_stats.dart';
 import '../utils/xlsx.dart';
+import '../widgets/master_sheet_trends.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/submission_editor.dart';
 import '../widgets/ui_kit.dart';
+
+enum MasterSheetLayout { vertical, horizontal }
+
+const _kMasterSheetLayout = 'ww_master_sheet_layout';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 final _dayLabel = DateFormat('EEE, MMM d');
@@ -91,6 +98,60 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   String? _member;
   bool _sidebarOpen = true;
   DateTimeRange? _customRange;
+  MasterSheetLayout _layout = MasterSheetLayout.vertical;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLayoutPref();
+  }
+
+  Future<void> _loadLayoutPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kMasterSheetLayout);
+    if (!mounted) return;
+    if (raw == MasterSheetLayout.horizontal.name) {
+      setState(() => _layout = MasterSheetLayout.horizontal);
+    }
+  }
+
+  Future<void> _setLayout(MasterSheetLayout layout) async {
+    setState(() => _layout = layout);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kMasterSheetLayout, layout.name);
+  }
+
+  (DateTime, DateTime) _statsRange() {
+    if (_customRange != null) {
+      return (
+        DateTime(_customRange!.start.year, _customRange!.start.month,
+            _customRange!.start.day),
+        DateTime(_customRange!.end.year, _customRange!.end.month,
+                _customRange!.end.day)
+            .add(const Duration(days: 1)),
+      );
+    }
+    if (_view == _View.team) {
+      final d = DateTime(_anchor.year, _anchor.month, _anchor.day);
+      return (d, d.add(const Duration(days: 1)));
+    }
+    final start = DateTime(_anchor.year, _anchor.month, 1);
+    final end = DateTime(_anchor.year, _anchor.month + 1, 1);
+    return (start, end);
+  }
+
+  MasterSheetStats get _stats {
+    final range = _statsRange();
+    var list = Store.instance.approvedSubmissions;
+    if (_view == _View.member && _member != null) {
+      list = list.where((s) => s.employeeName == _member).toList();
+    }
+    return buildMasterSheetStats(
+      submissions: list,
+      rangeStart: range.$1,
+      rangeEndExclusive: range.$2,
+    );
+  }
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
@@ -296,6 +357,21 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                   : Icons.clear_rounded,
             ),
           ),
+          IconButton(
+            tooltip: _layout == MasterSheetLayout.vertical
+                ? 'Switch to side-by-side layout'
+                : 'Switch to stacked layout',
+            onPressed: () => _setLayout(
+              _layout == MasterSheetLayout.vertical
+                  ? MasterSheetLayout.horizontal
+                  : MasterSheetLayout.vertical,
+            ),
+            icon: Icon(
+              _layout == MasterSheetLayout.vertical
+                  ? Icons.view_agenda_outlined
+                  : Icons.view_column_outlined,
+            ),
+          ),
           const ProfileAction(),
         ],
       ),
@@ -311,6 +387,8 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                 anchor: _anchor,
                 member: _member,
                 scope: _scope,
+                stats: _stats,
+                layout: _layout,
                 onView: (v) => setState(() => _view = v),
                 onShift: _shift,
                 onMember: (m) => setState(() => _member = m),
@@ -363,6 +441,8 @@ class _MainPanel extends StatelessWidget {
     required this.anchor,
     required this.member,
     required this.scope,
+    required this.stats,
+    required this.layout,
     required this.onView,
     required this.onShift,
     required this.onMember,
@@ -377,6 +457,8 @@ class _MainPanel extends StatelessWidget {
   final DateTime anchor;
   final String? member;
   final List<Submission> scope;
+  final MasterSheetStats stats;
+  final MasterSheetLayout layout;
   final ValueChanged<_View> onView;
   final ValueChanged<int> onShift;
   final ValueChanged<String?> onMember;
@@ -445,8 +527,59 @@ class _MainPanel extends StatelessWidget {
             ),
           ),
         const Divider(height: 1),
-        Expanded(child: _buildGrid(context)),
+        Expanded(child: _buildTrendsAndTable(context)),
       ],
+    );
+  }
+
+  Widget _buildTrendsAndTable(BuildContext context) {
+    final trends = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Trends', style: TextStyles.subheading),
+          const SizedBox(height: 10),
+          MasterSheetTrends(stats: stats),
+        ],
+      ),
+    );
+    final table = _buildGrid(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 900;
+        final sideBySide =
+            layout == MasterSheetLayout.horizontal && wide;
+        if (!sideBySide) {
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              trends,
+              const SizedBox(height: 16),
+              SizedBox(
+                height: constraints.maxHeight > 420
+                    ? constraints.maxHeight * 0.55
+                    : 360,
+                child: table,
+              ),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 2,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: trends,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(flex: 3, child: table),
+          ],
+        );
+      },
     );
   }
 
