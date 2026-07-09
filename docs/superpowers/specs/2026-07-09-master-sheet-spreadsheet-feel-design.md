@@ -1,7 +1,7 @@
 # Master Sheet Spreadsheet Feel — Design Spec
 
 **Date:** 2026-07-09  
-**Status:** Draft (awaiting user review)  
+**Status:** Approved  
 **Stack decision:** Enhance current Flutter `_SpreadsheetTable` (no React grid, no inline editing)
 
 ## Summary
