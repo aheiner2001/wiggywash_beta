@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'screens/manager_auth_screen.dart';
-import 'screens/manager_screen.dart';
+import 'screens/pending_approval_screen.dart';
+import 'screens/platform_admin_screen.dart';
+import 'widgets/manager_shell.dart';
 import 'screens/scorecard_screen.dart';
 import 'screens/company_login_screen.dart';
-import 'screens/super_admin_screen.dart';
 import 'services/store.dart';
 import 'theme.dart';
 import 'widgets/brand_header.dart';
@@ -57,12 +58,14 @@ class _Root extends StatelessWidget {
             return const CompanyLoginScreen();
           case AppView.managerAuth:
             return const ManagerAuthScreen();
+          case AppView.pendingApproval:
+            return const PendingApprovalScreen();
           case AppView.employee:
             return ScorecardScreen(profile: store.profile!);
           case AppView.manager:
-            return const ManagerScreen();
+            return const ManagerShell();
           case AppView.platformAdmin:
-            return const SuperAdminScreen();
+            return const PlatformAdminScreen();
         }
       },
     );

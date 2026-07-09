@@ -38,6 +38,9 @@ enum AppView {
 
   /// Platform-admin console.
   platformAdmin,
+
+  /// Manager signed up but company awaits platform approval.
+  pendingApproval,
 }
 
 /// The app's single data seam.
@@ -103,6 +106,8 @@ class Store extends ChangeNotifier {
   String? _activeCompanyId;
   Company? _activeCompany;
   List<Location> _companyLocations = [];
+  List<Company> _companies = [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _companiesSub;
 
   // ---- Locations ----
   List<Location> _locations = [];
@@ -146,6 +151,7 @@ class Store extends ChangeNotifier {
   String? get activeCompanyId => _activeCompanyId;
   Company? get activeCompany => _activeCompany;
   List<Location> get companyLocations => List.unmodifiable(_companyLocations);
+  List<Company> get companies => List.unmodifiable(_companies);
   List<Location> get locations => List.unmodifiable(_locations);
   String? get activeLocationId => _activeLocationId;
   bool get pendingManagerCreate => _pendingManagerCreate;
@@ -223,9 +229,13 @@ class Store extends ChangeNotifier {
       if (isActingAsEmployee) return AppView.employee;
     }
     if (role == UserRole.platformAdmin) return AppView.platformAdmin;
-    if (role == UserRole.companyManager &&
-        (_appUser!.locationId != null || _appUser!.companyId != null)) {
-      return AppView.manager;
+    if (role == UserRole.companyManager) {
+      if (_activeCompany?.status == CompanyStatus.pending) {
+        return AppView.pendingApproval;
+      }
+      if (_appUser!.locationId != null || _appUser!.companyId != null) {
+        return AppView.manager;
+      }
     }
     // Signed in with Google but no role yet → stay on the manager-auth screen
     // (e.g. mid-create, or a Google account with no manager account).
@@ -383,16 +393,37 @@ class Store extends ChangeNotifier {
     _appUser = AppUser.fromDoc(doc);
     final role = _appUser!.role;
     if (role == UserRole.platformAdmin) {
+      _bindCompaniesList();
       _bindLocationsList();
       _activeLocationId ??= _prefs?.getString(_kActiveLocation);
       _bindLocation(_activeLocationId);
     } else if (role == UserRole.companyManager) {
       _activeCompanyId = _appUser!.companyId;
+      if (_activeCompanyId != null) {
+        await _loadActiveCompanyDoc();
+        try {
+          final locSnap = await _locationsCol.orderBy('name').get();
+          _companyLocations = locSnap.docs.map(Location.fromDoc).toList();
+        } catch (e) {
+          debugPrint('load company locations error: $e');
+        }
+      }
       _activeLocationId = _appUser!.locationId;
       await _cacheSingleLocation(_activeLocationId);
       _bindLocation(_activeLocationId);
     }
     notifyListeners();
+  }
+
+  Future<void> _loadActiveCompanyDoc() async {
+    final id = _activeCompanyId;
+    if (id == null) return;
+    try {
+      final doc = await _companiesCol.doc(id).get();
+      _activeCompany = doc.exists ? Company.fromDoc(doc) : null;
+    } catch (e) {
+      debugPrint('loadActiveCompanyDoc error: $e');
+    }
   }
 
   Future<void> _cacheSingleLocation(String? locationId) async {
@@ -561,6 +592,178 @@ class Store extends ChangeNotifier {
         companyName: companyName,
         companyCode: companyCode,
       );
+
+  Future<String?> createPendingCompany({
+    required String companyName,
+    required String companyCode,
+    required String locationName,
+    String city = '',
+  }) async {
+    final user = _appUser;
+    if (user == null) return 'Sign in with Google first.';
+    final code = Company.normalizeCode(companyCode);
+    if (code.length < 4) return 'Company code must be at least 4 characters.';
+    if (!await isCompanyCodeAvailable(code)) {
+      return 'That code is taken — try another.';
+    }
+    final trimmedName = companyName.trim();
+    final trimmedLoc = locationName.trim();
+    if (trimmedName.isEmpty || trimmedLoc.isEmpty) {
+      return 'Enter a company name and first location name.';
+    }
+    try {
+      final companyRef = _companiesCol.doc();
+      final locRef = companyRef.collection('locations').doc();
+      final batch = _db.batch();
+      batch.set(
+        companyRef,
+        Company(
+          id: companyRef.id,
+          name: trimmedName,
+          companyCode: code,
+          status: CompanyStatus.pending,
+          createdByEmail: user.email,
+          createdByUid: user.uid,
+        ).toMap(),
+      );
+      batch.set(
+        locRef,
+        Location(
+          id: locRef.id,
+          name: trimmedLoc,
+          city: city.trim(),
+        ).toMap(),
+      );
+      batch.set(
+        _usersCol.doc(user.uid),
+        {
+          'role': UserRole.companyManager.firestoreValue,
+          'companyId': companyRef.id,
+          'locationId': locRef.id,
+          'email': user.email,
+          'displayName': user.displayName,
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+      _activeCompanyId = companyRef.id;
+      _activeLocationId = locRef.id;
+      _activeCompany = Company(
+        id: companyRef.id,
+        name: trimmedName,
+        companyCode: code,
+        status: CompanyStatus.pending,
+        createdByEmail: user.email,
+        createdByUid: user.uid,
+      );
+      _pendingManagerCreate = false;
+      _showManagerAuth = false;
+      await _cacheSingleLocation(locRef.id);
+      _bindLocation(locRef.id);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('createPendingCompany error: $e');
+      return 'Could not create your company. Check your connection.';
+    }
+  }
+
+  void _bindCompaniesList() {
+    if (_companiesSub != null) return;
+    _companiesSub = _companiesCol.orderBy('name').snapshots().listen(
+      (snap) {
+        _companies = snap.docs.map(Company.fromDoc).toList();
+        notifyListeners();
+      },
+      onError: (Object e) => debugPrint('companies listen error: $e'),
+    );
+  }
+
+  Future<int> locationCountForCompany(String companyId) async {
+    try {
+      final snap =
+          await _companiesCol.doc(companyId).collection('locations').get();
+      return snap.docs.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<String?> approveCompany(String companyId) async {
+    final admin = _appUser;
+    if (admin?.role != UserRole.platformAdmin) return 'Not authorized.';
+    try {
+      await _companiesCol.doc(companyId).set(
+        {
+          'status': CompanyStatus.active.firestoreValue,
+          'approvedAt': FieldValue.serverTimestamp(),
+          'approvedBy': admin!.uid,
+          'rejectionReason': FieldValue.delete(),
+        },
+        SetOptions(merge: true),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('approveCompany error: $e');
+      return 'Could not approve the company.';
+    }
+  }
+
+  Future<String?> rejectCompany(String companyId, {String? reason}) async {
+    final admin = _appUser;
+    if (admin?.role != UserRole.platformAdmin) return 'Not authorized.';
+    try {
+      await _companiesCol.doc(companyId).set(
+        {
+          'status': CompanyStatus.suspended.firestoreValue,
+          if (reason != null && reason.trim().isNotEmpty)
+            'rejectionReason': reason.trim(),
+        },
+        SetOptions(merge: true),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('rejectCompany error: $e');
+      return 'Could not reject the company.';
+    }
+  }
+
+  Future<String?> setCompanyActive(String companyId, bool active) async {
+    final admin = _appUser;
+    if (admin?.role != UserRole.platformAdmin) return 'Not authorized.';
+    try {
+      await _companiesCol.doc(companyId).set(
+        {
+          'status': active
+              ? CompanyStatus.active.firestoreValue
+              : CompanyStatus.suspended.firestoreValue,
+        },
+        SetOptions(merge: true),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('setCompanyActive error: $e');
+      return 'Could not update the company.';
+    }
+  }
+
+  Future<void> openCompanyAsAdmin(String companyId, {String? locationId}) async {
+    await setActiveCompany(companyId);
+    if (locationId != null) {
+      await setActiveLocation(locationId);
+    } else {
+      final locs = await _companiesCol
+          .doc(companyId)
+          .collection('locations')
+          .orderBy('name')
+          .limit(1)
+          .get();
+      if (locs.docs.isNotEmpty) {
+        await setActiveLocation(locs.docs.first.id);
+      }
+    }
+    notifyListeners();
+  }
 
   // ---- Employee site-code flow ----------------------------------------
 

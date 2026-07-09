@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../models/location.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../widgets/brand_header.dart';
 import '../widgets/store_message.dart';
 
-/// Manager / Super-Admin entry: sign in with an existing Google account, or
-/// create a manager account (admin password → Google → choose a site).
+/// Manager entry: Google sign-in for returning managers, or self-service
+/// company signup for new tenants.
 class ManagerAuthScreen extends StatefulWidget {
   const ManagerAuthScreen({super.key});
 
@@ -16,61 +15,46 @@ class ManagerAuthScreen extends StatefulWidget {
 }
 
 class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
-  final _password = TextEditingController();
-  final _newLocation = TextEditingController();
-  final _newSiteCode = TextEditingController();
+  final _companyName = TextEditingController();
+  final _companyCode = TextEditingController();
+  final _locationName = TextEditingController();
+  final _city = TextEditingController();
 
-  bool _creating = false; // toggled "create account" mode (pre sign-in)
+  bool _creating = false;
   bool _busy = false;
-
-  List<Location> _locations = [];
-  String? _selectedLocationId; // null = create a new site
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLocations();
-  }
-
-  Future<void> _loadLocations() async {
-    final locs = await Store.instance.fetchLocations();
-    if (!mounted) return;
-    setState(() => _locations = locs);
-  }
+  String? _formError;
 
   @override
   void dispose() {
-    _password.dispose();
-    _newLocation.dispose();
-    _newSiteCode.dispose();
+    _companyName.dispose();
+    _companyCode.dispose();
+    _locationName.dispose();
+    _city.dispose();
     super.dispose();
   }
 
-  Future<void> _googleSignIn({required bool creating}) async {
-    if (creating && _password.text.trim().isEmpty) {
-      showStoreMessage(context, 'Enter the admin password first.', error: true);
-      return;
-    }
+  Future<void> _googleSignIn() async {
     setState(() => _busy = true);
-    final err = await Store.instance.signInWithGoogle(creating: creating);
+    final err = await Store.instance.signInWithGoogle();
     if (!mounted) return;
     setState(() => _busy = false);
     if (err != null) showStoreMessage(context, err, error: true);
-    // On success the screen rebuilds; if no role yet, the "complete" step shows.
   }
 
-  Future<void> _finish() async {
+  Future<void> _createCompany() async {
+    setState(() => _formError = null);
     setState(() => _busy = true);
-    final err = await Store.instance.redeemAccessCode(
-      _password.text,
-      locationId: _selectedLocationId,
-      newLocationName: _selectedLocationId == null ? _newLocation.text : null,
-      newSiteCode: _selectedLocationId == null ? _newSiteCode.text : null,
+    final err = await Store.instance.createPendingCompany(
+      companyName: _companyName.text,
+      companyCode: _companyCode.text,
+      locationName: _locationName.text,
+      city: _city.text,
     );
     if (!mounted) return;
     setState(() => _busy = false);
-    if (err != null) showStoreMessage(context, err, error: true);
-    // On success the user gets a role and is routed to their dashboard.
+    if (err != null) {
+      setState(() => _formError = err);
+    }
   }
 
   void _back() {
@@ -80,17 +64,20 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: 400),
               child: AnimatedBuilder(
                 animation: Store.instance,
                 builder: (context, _) {
                   final appUser = Store.instance.appUser;
-                  final signedInNoRole = appUser != null && appUser.role == null;
+                  final signedIn = appUser != null;
+                  final showSignupForm =
+                      _creating && signedIn && appUser.role == null;
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -98,8 +85,8 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
                       const SizedBox(height: 12),
                       const BrandHeader(),
                       const SizedBox(height: 24),
-                      if (signedInNoRole)
-                        _completeStep(appUser.email)
+                      if (showSignupForm)
+                        _signupForm(appUser.email)
                       else if (_creating)
                         _createStep()
                       else
@@ -108,7 +95,7 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
                       TextButton.icon(
                         onPressed: _back,
                         icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                        label: const Text('Back to site code'),
+                        label: const Text('Back to company code'),
                       ),
                     ],
                   );
@@ -123,27 +110,25 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
 
   Widget _signInStep() {
     return AppCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text('Manager sign in', style: TextStyles.subheading),
           const SizedBox(height: 6),
-          const Text('Use the Google account on your manager profile.',
-              style: TextStyles.caption),
+          const Text(
+            'Use the Google account on your manager profile.',
+            style: TextStyles.caption,
+          ),
           const SizedBox(height: 18),
           if (_busy)
             const Center(child: CircularProgressIndicator())
           else ...[
-            ElevatedButton.icon(
-              onPressed: () => _googleSignIn(creating: false),
-              icon: const Icon(Icons.account_circle_rounded),
-              label: const Text('Continue with Google'),
-            ),
+            _googleButton(),
             const SizedBox(height: 18),
             TextButton(
               onPressed: () => setState(() => _creating = true),
-              child: const Text('Create a manager account'),
+              child: const Text('Create a new company'),
             ),
           ],
         ],
@@ -153,35 +138,21 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
 
   Widget _createStep() {
     return AppCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Create manager account', style: TextStyles.subheading),
+          const Text('Create your company', style: TextStyles.subheading),
           const SizedBox(height: 6),
           const Text(
-            'Enter the admin password, then sign in with the Google account '
-            'you want to use as a manager.',
+            'Sign in with Google, then tell us about your car wash business.',
             style: TextStyles.caption,
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _password,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Admin password',
-              hintText: 'Enter admin password',
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           if (_busy)
             const Center(child: CircularProgressIndicator())
           else ...[
-            ElevatedButton.icon(
-              onPressed: () => _googleSignIn(creating: true),
-              icon: const Icon(Icons.account_circle_rounded),
-              label: const Text('Continue with Google'),
-            ),
+            _googleButton(),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => setState(() => _creating = false),
@@ -193,83 +164,77 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
     );
   }
 
-  Widget _completeStep(String email) {
-    // If they already typed the admin password in the create step, don't ask
-    // again — just pick the site.
-    final needPassword = !Store.instance.pendingManagerCreate;
+  Widget _signupForm(String email) {
     return AppCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Finish setup', style: TextStyles.subheading),
+          const Text('Finish signup', style: TextStyles.subheading),
           const SizedBox(height: 6),
-          Text(
-            needPassword
-                ? 'Signed in as $email. Enter the admin password and choose '
-                    'your site.'
-                : 'Signed in as $email. Choose your site to finish.',
-            style: TextStyles.caption,
-          ),
+          Text('Signed in as $email', style: TextStyles.caption),
           const SizedBox(height: 16),
-          if (needPassword) ...[
-            TextField(
-              controller: _password,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Admin password',
-                hintText: 'Enter admin password',
-              ),
+          TextField(
+            controller: _companyName,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Company name',
+              hintText: 'e.g. Sparkle Auto Wash',
             ),
-            const SizedBox(height: 14),
-          ],
-          DropdownButtonFormField<String?>(
-            initialValue: _selectedLocationId,
-            decoration: const InputDecoration(labelText: 'Site'),
-            items: [
-              const DropdownMenuItem<String?>(
-                value: null,
-                child: Text('+ Create a new site'),
-              ),
-              ..._locations.map(
-                (l) => DropdownMenuItem<String?>(
-                  value: l.id,
-                  child: Text(l.displayName),
-                ),
-              ),
-            ],
-            onChanged: (v) => setState(() => _selectedLocationId = v),
           ),
-          if (_selectedLocationId == null) ...[
-            const SizedBox(height: 10),
-            TextField(
-              controller: _newLocation,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'New site name',
-                hintText: 'e.g. Omaha — 144th St',
-              ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _companyCode,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'Company code',
+              hintText: 'e.g. SPARKLE',
+              errorText: _formError,
+              helperText: 'Employees will use this to sign in (4+ characters)',
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _newSiteCode,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                labelText: 'Site code for employees',
-                hintText: 'e.g. OMAHA1',
-              ),
+            onChanged: (_) {
+              if (_formError != null) setState(() => _formError = null);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _locationName,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'First location name',
+              hintText: 'e.g. Omaha — 144th St',
             ),
-          ],
-          const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _city,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'City (optional)',
+            ),
+          ),
+          const SizedBox(height: 18),
           if (_busy)
             const Center(child: CircularProgressIndicator())
           else
             ElevatedButton(
-              onPressed: _finish,
-              child: const Text('Finish'),
+              onPressed: _createCompany,
+              child: const Text('Submit for approval'),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _googleButton() {
+    return OutlinedButton.icon(
+      onPressed: _googleSignIn,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: AppColors.hairline),
+      ),
+      icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
+      label: const Text('Continue with Google'),
     );
   }
 }

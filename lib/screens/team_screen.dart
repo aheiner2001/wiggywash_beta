@@ -6,8 +6,7 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../widgets/store_message.dart';
 
-/// Manager screen: the location's **site code** (shared with employees) plus the
-/// **name roster** employees pick from after entering that code.
+/// Manager screen: company code for employees plus roster and locations.
 class TeamScreen extends StatefulWidget {
   const TeamScreen({super.key});
 
@@ -48,46 +47,55 @@ class _TeamScreenState extends State<TeamScreen> {
     showStoreMessage(context, 'Added to roster');
   }
 
-  Future<void> _shareSiteCode() async {
-    final loc = Store.instance.activeLocation;
-    if (loc == null) return;
-    if (loc.siteCode.isEmpty) {
-      showStoreMessage(context, 'Set a site code first.', error: true);
+  Future<void> _shareCompanyCode() async {
+    final company = Store.instance.activeCompany;
+    if (company == null || company.companyCode.isEmpty) {
+      showStoreMessage(context, 'Company code not available yet.', error: true);
       return;
     }
+    final loc = Store.instance.activeLocation;
     await showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.transparent,
-        child: _SiteCodeShareCard(
-          locationName: loc.displayName,
-          code: loc.siteCode,
+        child: _CompanyCodeShareCard(
+          companyName: company.name,
+          locationName: loc?.displayName ?? company.name,
+          code: company.companyCode,
           onShare: () {
-            final text = 'Sign in to the Wiggy Wash scorecard for '
-                '${loc.displayName}.\nSite code: ${loc.siteCode}';
-            Share.share(text);
+            Share.share(
+              'Sign in to the ${company.name} scorecard.\n'
+              'Company code: ${company.companyCode}',
+            );
           },
         ),
       ),
     );
   }
 
-  Future<void> _editSiteCode() async {
-    final loc = Store.instance.activeLocation;
-    if (loc == null) return;
-    final controller = TextEditingController(text: loc.siteCode);
-    final saved = await showDialog<bool>(
+  Future<void> _addLocation() async {
+    final name = TextEditingController();
+    final city = TextEditingController();
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Site code'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(
-            labelText: 'Site code',
-            hintText: 'e.g. OMAHA1',
-          ),
+        title: const Text('Add location'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Location name'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: city,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'City (optional)'),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -95,16 +103,29 @@ class _TeamScreenState extends State<TeamScreen> {
               child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save')),
+              child: const Text('Add')),
         ],
       ),
     );
-    final value = controller.text;
-    controller.dispose();
-    if (saved != true || !mounted) return;
-    final err = await Store.instance.setSiteCode(loc.id, value);
+    if (ok != true || !mounted) {
+      name.dispose();
+      city.dispose();
+      return;
+    }
+    final id = await Store.instance.createLocation(name.text, city: city.text);
+    name.dispose();
+    city.dispose();
     if (!mounted) return;
-    showStoreMessage(context, err ?? 'Site code updated', error: err != null);
+    if (id == null) {
+      showStoreMessage(context, 'Could not add location.', error: true);
+      return;
+    }
+    await Store.instance.setActiveLocation(id);
+    final companyId = Store.instance.activeCompanyId;
+    if (companyId != null) {
+      await Store.instance.previewCompany(companyId);
+    }
+    showStoreMessage(context, 'Location added');
   }
 
   Future<void> _remove(String id, String name) async {
@@ -191,12 +212,17 @@ class _TeamScreenState extends State<TeamScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Team & Site Code'),
+        title: const Text('Team'),
         actions: [
           IconButton(
-            tooltip: 'Share site code',
-            onPressed: _shareSiteCode,
+            tooltip: 'Share company code',
+            onPressed: _shareCompanyCode,
             icon: const Icon(Icons.ios_share_rounded),
+          ),
+          IconButton(
+            tooltip: 'Add location',
+            onPressed: _addLocation,
+            icon: const Icon(Icons.add_business_outlined),
           ),
         ],
       ),
@@ -204,14 +230,35 @@ class _TeamScreenState extends State<TeamScreen> {
         animation: Store.instance,
         builder: (context, _) {
           final workers = Store.instance.workers;
-          final code = Store.instance.activeLocation?.siteCode ?? '';
+          final company = Store.instance.activeCompany;
+          final code = company?.companyCode ?? '';
+          final locations = Store.instance.companyLocations.isNotEmpty
+              ? Store.instance.companyLocations
+              : Store.instance.locations;
           return Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _SiteCodeCard(code: code, onEdit: _editSiteCode),
+                  _CompanyCodeCard(code: code, companyName: company?.name),
+                  if (locations.length > 1) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: Store.instance.activeLocationId,
+                      decoration: const InputDecoration(
+                        labelText: 'Active location',
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final l in locations)
+                          DropdownMenuItem(value: l.id, child: Text(l.displayName)),
+                      ],
+                      onChanged: (id) {
+                        if (id != null) Store.instance.setActiveLocation(id);
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   AppCard(
                     padding: const EdgeInsets.all(16),
@@ -222,7 +269,7 @@ class _TeamScreenState extends State<TeamScreen> {
                         const SizedBox(height: 8),
                         const Text(
                           'Employees pick their name from this list after they '
-                          'enter the site code.',
+                          'enter the company code.',
                           style: TextStyles.caption,
                         ),
                         const SizedBox(height: 14),
@@ -292,16 +339,15 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 }
 
-class _SiteCodeCard extends StatelessWidget {
-  const _SiteCodeCard({required this.code, required this.onEdit});
+class _CompanyCodeCard extends StatelessWidget {
+  const _CompanyCodeCard({required this.code, this.companyName});
   final String code;
-  final VoidCallback onEdit;
+  final String? companyName;
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
       padding: const EdgeInsets.all(16),
-      onTap: onEdit,
       child: Row(
         children: [
           const Icon(Icons.qr_code_2_rounded, color: AppColors.navy),
@@ -310,10 +356,13 @@ class _SiteCodeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Site code', style: TextStyles.caption),
+                Text(
+                  companyName ?? 'Company code',
+                  style: TextStyles.caption,
+                ),
                 const SizedBox(height: 2),
                 Text(
-                  code.isEmpty ? 'Not set — tap to add' : code,
+                  code.isEmpty ? 'Pending approval' : code,
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -326,22 +375,21 @@ class _SiteCodeCard extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.edit_rounded, size: 18, color: AppColors.textMuted),
         ],
       ),
     );
   }
 }
 
-/// A clean, screenshot-friendly card a manager can show staff: big site code,
-/// location name, and a Share button.
-class _SiteCodeShareCard extends StatelessWidget {
-  const _SiteCodeShareCard({
+class _CompanyCodeShareCard extends StatelessWidget {
+  const _CompanyCodeShareCard({
+    required this.companyName,
     required this.locationName,
     required this.code,
     required this.onShare,
   });
 
+  final String companyName;
   final String locationName;
   final String code;
   final VoidCallback onShare;
@@ -366,7 +414,7 @@ class _SiteCodeShareCard extends StatelessWidget {
               errorBuilder: (context, error, stack) => const SizedBox.shrink()),
           const SizedBox(height: 20),
           const Text(
-            'SITE CODE',
+            'COMPANY CODE',
             style: TextStyle(
               color: Colors.white70,
               fontWeight: FontWeight.w700,
@@ -395,7 +443,7 @@ class _SiteCodeShareCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            locationName,
+            companyName,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
@@ -403,9 +451,15 @@ class _SiteCodeShareCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            locationName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
           const SizedBox(height: 6),
           const Text(
-            'Open the app, enter this code, then pick your name.',
+            'Open the app, enter this code, pick a location, then your name.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white70, fontSize: 13),
           ),

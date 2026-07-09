@@ -25,6 +25,9 @@ class Company {
     this.createdAt,
     this.approvedAt,
     this.approvedBy,
+    this.createdByEmail,
+    this.createdByUid,
+    this.rejectionReason,
   });
 
   final String id;
@@ -36,6 +39,9 @@ class Company {
   final DateTime? createdAt;
   final DateTime? approvedAt;
   final String? approvedBy;
+  final String? createdByEmail;
+  final String? createdByUid;
+  final String? rejectionReason;
 
   bool get isActive => status == CompanyStatus.active;
 
@@ -52,6 +58,9 @@ class Company {
             : FieldValue.serverTimestamp(),
         if (approvedAt != null) 'approvedAt': Timestamp.fromDate(approvedAt!),
         if (approvedBy != null) 'approvedBy': approvedBy,
+        if (createdByEmail != null) 'createdByEmail': createdByEmail,
+        if (createdByUid != null) 'createdByUid': createdByUid,
+        if (rejectionReason != null) 'rejectionReason': rejectionReason,
       };
 
   factory Company.fromMap(String id, Map<String, dynamic> data) {
@@ -68,6 +77,9 @@ class Company {
       createdAt: ts is Timestamp ? ts.toDate() : null,
       approvedAt: ats is Timestamp ? ats.toDate() : null,
       approvedBy: data['approvedBy'] as String?,
+      createdByEmail: data['createdByEmail'] as String?,
+      createdByUid: data['createdByUid'] as String?,
+      rejectionReason: data['rejectionReason'] as String?,
     );
   }
 
