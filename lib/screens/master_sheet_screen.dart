@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../models/scorecard_config.dart';
@@ -7,6 +9,7 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
+import '../utils/xlsx.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/submission_editor.dart';
@@ -18,6 +21,60 @@ final _monthLabel = DateFormat('MMMM yyyy');
 final _shortDate = DateFormat('M/d');
 
 enum _View { team, member, month }
+
+enum _ExportFormat { xlsx, csv, clipboard }
+
+/// Builds grid rows for display and export from approved submissions.
+({
+  List<MasterSheetRow> rows,
+  Submission totals,
+  String title,
+  String rangeLabel,
+  bool firstColIsDate,
+}) _buildMasterSheetRows({
+  required List<Submission> scope,
+  required _View view,
+  required DateTime anchor,
+  required String? member,
+  required Submission Function(String, List<Submission>, DateTime) aggregate,
+}) {
+  final isDaily = view == _View.member;
+  final rows = <MasterSheetRow>[];
+  if (isDaily) {
+    final byDay = [...scope]..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
+    for (final s in byDay) {
+      rows.add(MasterSheetRow(label: _shortDate.format(s.submittedAt), submission: s));
+    }
+  } else {
+    final byName = <String, List<Submission>>{};
+    for (final s in scope) {
+      byName.putIfAbsent(s.employeeName, () => []).add(s);
+    }
+    final names = byName.keys.toList()..sort();
+    for (final n in names) {
+      rows.add(MasterSheetRow(
+        label: n,
+        submission: aggregate(n, byName[n]!, anchor),
+      ));
+    }
+  }
+  final totals = aggregate('TOTALS', scope, anchor);
+  final title = isDaily
+      ? '${member ?? ''} · ${_monthLabel.format(anchor)}'
+      : (view == _View.team
+          ? _dayLabel.format(anchor)
+          : _monthLabel.format(anchor));
+  final rangeLabel = title;
+  return (
+    rows: rows,
+    totals: totals,
+    title: Store.instance.activeCompany?.name ??
+        Store.instance.activeLocation?.name ??
+        'Master Sheet',
+    rangeLabel: rangeLabel,
+    firstColIsDate: isDaily,
+  );
+}
 
 /// Manager "BA Master Doc" — approved scorecards rolled into a clean,
 /// spreadsheet-style grid with a pending-approval sidebar.
@@ -33,6 +90,7 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   DateTime _anchor = DateTime.now();
   String? _member;
   bool _sidebarOpen = true;
+  DateTimeRange? _customRange;
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
@@ -52,6 +110,14 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
   /// Approved scorecards visible in the current view's time window.
   List<Submission> get _scope {
     final approved = Store.instance.approvedSubmissions;
+    if (_customRange != null) {
+      final end = _customRange!.end.add(const Duration(days: 1));
+      return approved
+          .where((s) =>
+              !s.submittedAt.isBefore(_customRange!.start) &&
+              s.submittedAt.isBefore(end))
+          .toList();
+    }
     switch (_view) {
       case _View.team:
         return approved.where((s) => _sameDay(s.submittedAt, _anchor)).toList();
@@ -95,16 +161,65 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
     );
   }
 
-  Future<void> _export() async {
-    final subs = _scope;
-    if (subs.isEmpty) {
+  String get _viewLabel => _customRange != null
+      ? 'Custom range'
+      : switch (_view) {
+          _View.team => 'Team',
+          _View.member => 'Member',
+          _View.month => 'Month',
+        };
+
+  Future<void> _pickCustomRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+      initialDateRange: _customRange,
+    );
+    if (picked != null) setState(() => _customRange = picked);
+  }
+
+  Future<void> _export(_ExportFormat format) async {
+    final scope = _scope;
+    if (scope.isEmpty) {
       showStoreMessage(context, 'Nothing to export here yet.', error: true);
       return;
     }
-    final loc = Store.instance.activeLocation?.name ?? 'wiggywash';
-    final slug = loc.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-    try {
-      await exportCsv('$slug-${_view.name}.csv', submissionsToCsv(subs));
+    final built = _buildMasterSheetRows(
+      scope: scope,
+      view: _view,
+      anchor: _anchor,
+      member: _member,
+      aggregate: _aggregate,
+    );
+    final slug = (built.title)
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+  try {
+      switch (format) {
+        case _ExportFormat.xlsx:
+          final bytes = buildMasterSheetXlsx(
+            rows: built.rows,
+            totals: built.totals,
+            title: built.title,
+            viewLabel: '${built.rangeLabel} · $_viewLabel',
+            firstColIsDate: built.firstColIsDate,
+          );
+          await exportXlsx('$slug-${_view.name}.xlsx', bytes);
+        case _ExportFormat.csv:
+          await exportCsv('$slug-${_view.name}.csv', submissionsToCsv(scope));
+        case _ExportFormat.clipboard:
+          await Clipboard.setData(ClipboardData(
+            text: masterSheetToTsv(
+              rows: built.rows,
+              totals: built.totals,
+              title: built.title,
+              viewLabel: '${built.rangeLabel} · $_viewLabel',
+              firstColIsDate: built.firstColIsDate,
+            ),
+          ));
+          if (mounted) showStoreMessage(context, 'Copied to clipboard');
+      }
     } catch (e) {
       if (mounted) showStoreMessage(context, 'Export failed: $e', error: true);
     }
@@ -147,10 +262,39 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
             onPressed: _addManual,
             icon: const Icon(Icons.add_rounded),
           ),
-          IconButton(
-            tooltip: 'Export CSV',
-            onPressed: _export,
+          PopupMenuButton<_ExportFormat>(
+            tooltip: 'Export',
             icon: const Icon(Icons.download_rounded),
+            onSelected: _export,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _ExportFormat.xlsx,
+                child: Text('Excel (.xlsx)'),
+              ),
+              PopupMenuItem(
+                value: _ExportFormat.csv,
+                child: Text('CSV (.csv)'),
+              ),
+              PopupMenuItem(
+                value: _ExportFormat.clipboard,
+                child: Text('Copy to clipboard'),
+              ),
+            ],
+          ),
+          IconButton(
+            tooltip: _customRange == null ? 'Custom date range' : 'Clear range',
+            onPressed: () {
+              if (_customRange != null) {
+                setState(() => _customRange = null);
+              } else {
+                _pickCustomRange();
+              }
+            },
+            icon: Icon(
+              _customRange == null
+                  ? Icons.date_range_rounded
+                  : Icons.clear_rounded,
+            ),
           ),
           const ProfileAction(),
         ],
@@ -173,6 +317,8 @@ class _MasterSheetScreenState extends State<MasterSheetScreen> {
                 onDrill: _drillToMember,
                 onEdit: _editApproved,
                 aggregate: _aggregate,
+                viewLabel: _viewLabel,
+                customRange: _customRange,
               );
               if (wide) {
                 return Row(
@@ -223,6 +369,8 @@ class _MainPanel extends StatelessWidget {
     required this.onDrill,
     required this.onEdit,
     required this.aggregate,
+    required this.viewLabel,
+    this.customRange,
   });
 
   final _View view;
@@ -235,6 +383,8 @@ class _MainPanel extends StatelessWidget {
   final ValueChanged<String> onDrill;
   final ValueChanged<Submission> onEdit;
   final Submission Function(String, List<Submission>, DateTime) aggregate;
+  final String viewLabel;
+  final DateTimeRange? customRange;
 
   @override
   Widget build(BuildContext context) {
@@ -317,48 +467,51 @@ class _MainPanel extends StatelessWidget {
     }
 
     final isDaily = view == _View.member;
-
-    // Build the list of (label, aggregated submission) rows.
-    final rows = <(String, Submission)>[];
-    if (isDaily) {
-      final byDay = [...scope]
-        ..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
-      for (final s in byDay) {
-        rows.add((_shortDate.format(s.submittedAt), s));
-      }
-    } else {
-      final byName = <String, List<Submission>>{};
-      for (final s in scope) {
-        byName.putIfAbsent(s.employeeName, () => []).add(s);
-      }
-      final names = byName.keys.toList()..sort();
-      for (final n in names) {
-        rows.add((n, aggregate(n, byName[n]!, anchor)));
-      }
-    }
-    final totals = aggregate('TOTALS', scope, anchor);
+    final built = _buildMasterSheetRows(
+      scope: scope,
+      view: view,
+      anchor: anchor,
+      member: member,
+      aggregate: aggregate,
+    );
+    final rows = built.rows;
+    final totals = built.totals;
     final topScore = rows.isEmpty
         ? 0
-        : rows.map((r) => r.$2.overallScore).reduce((a, b) => a > b ? a : b);
+        : rows
+            .map((r) => r.submission.overallScore)
+            .reduce((a, b) => a > b ? a : b);
+    final title = built.rangeLabel;
 
-    final title = isDaily
-        ? '${member ?? ''} · ${_monthLabel.format(anchor)}'
-        : (view == _View.team
-            ? _dayLabel.format(anchor)
-            : _monthLabel.format(anchor));
-
-    _SpreadsheetTable table({void Function(Submission)? onTap}) =>
+    _SpreadsheetTable table({
+      void Function(Submission)? onTap,
+      _TablePart part = _TablePart.all,
+    }) =>
         _SpreadsheetTable(
-          rows: rows,
+          rows: rows
+              .map((r) => (r.label, r.submission))
+              .toList(),
           totals: totals,
           topScore: topScore,
           firstColIsDate: isDaily,
           onTapRow: onTap,
+          part: part,
         );
+
+    final rangeText = customRange != null
+        ? '${_shortDate.format(customRange!.start)} – ${_shortDate.format(customRange!.end)}'
+        : built.rangeLabel;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: Text(
+            'Exporting ${rows.length} rows · $rangeText · $viewLabel',
+            style: TextStyles.caption,
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 2, 6, 2),
           child: Row(
@@ -385,19 +538,34 @@ class _MainPanel extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
-                child: table(
-                  onTap: (s) =>
-                      isDaily ? onEdit(s) : onDrill(s.employeeName),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+                  child: table(part: _TablePart.header),
                 ),
               ),
-            ),
+              Expanded(
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 24),
+                      child: table(
+                        part: _TablePart.body,
+                        onTap: (s) =>
+                            isDaily ? onEdit(s) : onDrill(s.employeeName),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -405,15 +573,18 @@ class _MainPanel extends StatelessWidget {
   }
 }
 
+enum _TablePart { all, header, body }
+
 /// Clean spreadsheet grid (à la the BA MASTER DOC): fixed columns, gridlines,
 /// rotated headers, a point-value row, color-coded BA, and a totals row.
-class _SpreadsheetTable extends StatelessWidget {
+class _SpreadsheetTable extends StatefulWidget {
   const _SpreadsheetTable({
     required this.rows,
     required this.totals,
     required this.topScore,
     required this.firstColIsDate,
     this.onTapRow,
+    this.part = _TablePart.all,
   });
 
   final List<(String, Submission)> rows;
@@ -421,32 +592,53 @@ class _SpreadsheetTable extends StatelessWidget {
   final int topScore;
   final bool firstColIsDate;
   final void Function(Submission)? onTapRow;
+  final _TablePart part;
+
+  @override
+  State<_SpreadsheetTable> createState() => _SpreadsheetTableState();
+}
+
+class _SpreadsheetTableState extends State<_SpreadsheetTable> {
+  String? _hoveredLabel;
 
   static const _gridColor = Color(0xFFD7DCE3);
 
   @override
   Widget build(BuildContext context) {
     final items = kLineItems;
-    // talked + items + VIP + AbvEco are the plain 50px numeric columns.
     final numericCols = 1 + items.length + 2;
     final colWidths = <int, TableColumnWidth>{
       0: const FixedColumnWidth(116),
       for (var c = 1; c <= numericCols; c++) c: const FixedColumnWidth(50),
-      numericCols + 1: const FixedColumnWidth(58), // BA %
-      numericCols + 2: const FixedColumnWidth(54), // Score
-      numericCols + 3: const FixedColumnWidth(82), // Revenue
+      numericCols + 1: const FixedColumnWidth(58),
+      numericCols + 2: const FixedColumnWidth(54),
+      numericCols + 3: const FixedColumnWidth(82),
     };
+
+    final tableRows = <TableRow>[];
+    switch (widget.part) {
+      case _TablePart.all:
+        tableRows.add(_headerRow(items));
+        tableRows.add(_pointRow(items));
+        for (final r in widget.rows) {
+          tableRows.add(_dataRow(r.$1, r.$2));
+        }
+        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+      case _TablePart.header:
+        tableRows.add(_headerRow(items));
+        tableRows.add(_pointRow(items));
+      case _TablePart.body:
+        for (final r in widget.rows) {
+          tableRows.add(_dataRow(r.$1, r.$2));
+        }
+        tableRows.add(_dataRow('TOTALS', widget.totals, isTotal: true));
+    }
 
     return Table(
       columnWidths: colWidths,
       border: TableBorder.all(color: _gridColor, width: 1),
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        _headerRow(items),
-        _pointRow(items),
-        for (final r in rows) _dataRow(r.$1, r.$2),
-        _dataRow('TOTALS', totals, isTotal: true),
-      ],
+      children: tableRows,
     );
   }
 
@@ -454,7 +646,7 @@ class _SpreadsheetTable extends StatelessWidget {
     return TableRow(
       decoration: const BoxDecoration(color: AppColors.navy),
       children: [
-        _firstHeader(firstColIsDate ? 'Date' : 'Name'),
+        _firstHeader(widget.firstColIsDate ? 'Date' : 'Name'),
         _vHeader('Total Talked'),
         for (final i in items) _vHeader(i.label),
         _vHeader('Total VIP'),
@@ -535,11 +727,15 @@ class _SpreadsheetTable extends StatelessWidget {
     final items = kLineItems;
     final ba = s.businessAverage;
     final goal = s.baGoal > 0 ? s.baGoal : 40.0;
-    final isTop = !isTotal && s.overallScore == topScore && topScore > 0;
+    final isTop =
+        !isTotal && s.overallScore == widget.topScore && widget.topScore > 0;
+    final isHovered = kIsWeb && _hoveredLabel == label;
     final w = isTotal ? FontWeight.w900 : FontWeight.w600;
     final rowColor = isTotal
         ? AppColors.blueSoft
-        : (isTop ? const Color(0xFFEAF6EF) : Colors.white);
+        : (isTop
+            ? const Color(0xFFEAF6EF)
+            : (isHovered ? AppColors.blueSoft.withValues(alpha: 0.5) : Colors.white));
 
     Widget numCell(String v, {Color? color, FontWeight? weight}) => Container(
           height: 34,
@@ -554,7 +750,12 @@ class _SpreadsheetTable extends StatelessWidget {
     final first = Material(
       color: rowColor,
       child: InkWell(
-        onTap: (isTotal || onTapRow == null) ? null : () => onTapRow!(s),
+        onTap: (isTotal || widget.onTapRow == null)
+            ? null
+            : () => widget.onTapRow!(s),
+        onHover: kIsWeb && !isTotal && widget.onTapRow != null
+            ? (hover) => setState(() => _hoveredLabel = hover ? label : null)
+            : null,
         child: Container(
           height: 34,
           alignment: Alignment.centerLeft,

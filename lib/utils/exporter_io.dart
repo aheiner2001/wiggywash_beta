@@ -10,3 +10,14 @@ Future<void> exportCsv(String filename, String csv) async {
     XFile.fromData(bytes, mimeType: 'text/csv', name: filename),
   ]);
 }
+
+/// Share or save a binary file (e.g. `.xlsx`).
+Future<void> exportBytes(
+  String filename,
+  Uint8List bytes, {
+  String mimeType = 'application/octet-stream',
+}) async {
+  await Share.shareXFiles([
+    XFile.fromData(bytes, mimeType: mimeType, name: filename),
+  ]);
+}
