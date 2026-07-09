@@ -238,7 +238,6 @@ class _RevenueLineChart extends StatelessWidget {
       LineChartData(
         minY: 0,
         maxY: chartMaxY,
-        clipData: const FlClipData.all(),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
