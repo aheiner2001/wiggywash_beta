@@ -134,52 +134,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('Dark mode', style: TextStyles.subheading),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'This device only. Uses the dark variant of the company theme.',
-                      style: TextStyles.caption,
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Use dark mode'),
-                      value: Store.instance.darkMode,
-                      onChanged: (v) => Store.instance.setDarkMode(v),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              AppCard(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
                     const Text('Company theme', style: TextStyles.subheading),
                     const SizedBox(height: 6),
                     const Text(
-                      'Applies company-wide to Team, Sheet, Scorecard, and dashboard.',
+                      'Applies company-wide. Each option is a distinct light palette.',
                       style: TextStyles.caption,
                     ),
                     const SizedBox(height: 14),
-                    SegmentedButton<AppThemeId>(
-                      segments: const [
-                        ButtonSegment(
-                          value: AppThemeId.classic,
-                          label: Text('Classic'),
-                        ),
-                        ButtonSegment(
-                          value: AppThemeId.forest,
-                          label: Text('Forest'),
-                        ),
-                        ButtonSegment(
-                          value: AppThemeId.sky,
-                          label: Text('Sky'),
-                        ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final id in AppThemeId.values)
+                          ChoiceChip(
+                            label: Text(id.label),
+                            selected: _themeId == id,
+                            onSelected: _themeBusy
+                                ? null
+                                : (_) => _setTheme(id),
+                          ),
                       ],
-                      selected: {_themeId},
-                      onSelectionChanged:
-                          _themeBusy ? null : (s) => _setTheme(s.first),
                     ),
                     const SizedBox(height: 14),
                     Row(
@@ -189,10 +163,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Container(
                               height: 36,
                               margin: EdgeInsets.only(
-                                right: id == AppThemeId.sky ? 0 : 8,
+                                right: id == AppThemeId.blush ? 0 : 6,
                               ),
                               decoration: BoxDecoration(
-                                color: primaryForTheme(id, dark: false),
+                                color: primaryForTheme(id),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: _themeId == id

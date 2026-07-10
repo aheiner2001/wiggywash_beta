@@ -52,20 +52,19 @@ class AppSpacing {
 
 ThemeData buildTheme({
   AppThemeId themeId = AppThemeId.classic,
-  bool dark = false,
+  bool dark = false, // ignored — dark mode removed
 }) {
-  final tokens = WiggyTokens.forId(themeId, dark: dark);
-  final brand = primaryForTheme(themeId, dark: dark);
-  final onPrimary = onPrimaryForTheme(themeId, dark: dark);
-  final surface = surfaceForTheme(themeId, dark: dark);
-  final scaffold = scaffoldForTheme(themeId, dark: dark);
-  final onSurface =
-      dark ? const Color(0xFFE8EEF6) : AppColors.textPrimary;
-  final muted = dark ? const Color(0xFF9AA7B8) : AppColors.textMuted;
+  final tokens = WiggyTokens.forId(themeId);
+  final brand = primaryForTheme(themeId);
+  final onPrimary = onPrimaryForTheme(themeId);
+  final surface = surfaceForTheme(themeId);
+  final scaffold = scaffoldForTheme(themeId);
+  const onSurface = AppColors.textPrimary;
+  const muted = AppColors.textMuted;
 
   final scheme = ColorScheme.fromSeed(
     seedColor: brand,
-    brightness: dark ? Brightness.dark : Brightness.light,
+    brightness: Brightness.light,
   ).copyWith(
     primary: brand,
     secondary: tokens.accent,

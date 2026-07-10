@@ -42,7 +42,7 @@ class WiggyWashApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: buildTheme(
             themeId: themeId,
-            dark: Store.instance.darkMode,
+            dark: false,
           ),
           home: const _Root(),
         );

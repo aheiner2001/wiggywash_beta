@@ -22,7 +22,6 @@ import '../models/submission.dart';
 import '../models/worker.dart';
 import '../theme/app_theme_id.dart';
 import '../utils/brand_color.dart';
-import '../utils/dark_mode_prefs.dart';
 import '../utils/firestore_user_error.dart';
 import '../utils/manager_invite_logic.dart';
 import '../utils/staff_request_logic.dart';
@@ -111,10 +110,6 @@ class Store extends ChangeNotifier {
   // chosen name, without losing their account session.
   bool _actingAsEmployee = false;
   String? _actingName;
-
-  // ---- Appearance (device) ----
-  bool _darkMode = false;
-  bool get darkMode => _darkMode;
 
   // ---- Company ----
   String? _activeCompanyId;
@@ -307,7 +302,6 @@ class Store extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    _darkMode = await DarkModePrefs.load();
     _loadPrices();
     _loadSettings();
     _loadEmployeeProfile();
@@ -963,12 +957,6 @@ class Store extends ChangeNotifier {
       debugPrint('updateCompanyPrimaryColor error: $e');
       return 'Could not save brand color.';
     }
-  }
-
-  Future<void> setDarkMode(bool value) async {
-    _darkMode = value;
-    await DarkModePrefs.save(value);
-    notifyListeners();
   }
 
   Future<String?> updateCompanyThemeId(String themeId) async {

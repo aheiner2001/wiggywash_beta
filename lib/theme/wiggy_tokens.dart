@@ -20,18 +20,24 @@ class WiggyTokens extends ThemeExtension<WiggyTokens> {
   final Color hairline;
   final Color accent;
 
-  static WiggyTokens forId(AppThemeId id, {required bool dark}) {
+  static WiggyTokens forId(AppThemeId id, {bool dark = false}) {
+    // Dark mode removed — always light tokens.
     switch (id) {
       case AppThemeId.classic:
-        return dark ? _classicDark : _classicLight;
+        return _classic;
       case AppThemeId.forest:
-        return dark ? _forestDark : _forestLight;
+        return _forest;
       case AppThemeId.sky:
-        return dark ? _skyDark : _skyLight;
+        return _sky;
+      case AppThemeId.sand:
+        return _sand;
+      case AppThemeId.blush:
+        return _blush;
     }
   }
 
-  static const _classicLight = WiggyTokens(
+  /// Navy + red brand, cool blue tallies.
+  static const _classic = WiggyTokens(
     sectionHeader: Color(0xFFE9C4C7),
     sectionHeaderText: Color(0xFF7A4E55),
     tallyBox: Color(0xFF8FC4E8),
@@ -40,49 +46,44 @@ class WiggyTokens extends ThemeExtension<WiggyTokens> {
     accent: Color(0xFFE2342B),
   );
 
-  static const _classicDark = WiggyTokens(
-    sectionHeader: Color(0xFF2A3548),
-    sectionHeaderText: Color(0xFFE9C4C7),
-    tallyBox: Color(0xFF3A5A78),
-    tallyField: Color(0xFF243044),
-    hairline: Color(0xFF2E3A4D),
-    accent: Color(0xFFE2342B),
+  /// Deep green ops — mint headers, green tallies.
+  static const _forest = WiggyTokens(
+    sectionHeader: Color(0xFFB7E4C7),
+    sectionHeaderText: Color(0xFF081C15),
+    tallyBox: Color(0xFF40916C),
+    tallyField: Color(0xFFD8F3DC),
+    hairline: Color(0xFFB7C9BE),
+    accent: Color(0xFF1B4332),
   );
 
-  static const _forestLight = WiggyTokens(
-    sectionHeader: Color(0xFFA8D5BA),
-    sectionHeaderText: Color(0xFF1B4332),
-    tallyBox: Color(0xFF6BBF8A),
-    tallyField: Color(0xFFE5F4EA),
-    hairline: Color(0xFFD0E5D8),
-    accent: Color(0xFF2E7D52),
-  );
-
-  static const _forestDark = WiggyTokens(
-    sectionHeader: Color(0xFF1B4332),
-    sectionHeaderText: Color(0xFFC8E6C9),
-    tallyBox: Color(0xFF2E7D52),
-    tallyField: Color(0xFF14261E),
-    hairline: Color(0xFF1F3328),
-    accent: Color(0xFF66BB6A),
-  );
-
-  static const _skyLight = WiggyTokens(
-    sectionHeader: Color(0xFF90CDF4),
-    sectionHeaderText: Color(0xFF1A365D),
-    tallyBox: Color(0xFF63B3ED),
-    tallyField: Color(0xFFEBF8FF),
-    hairline: Color(0xFFD0E4F5),
-    accent: Color(0xFF3182CE),
-  );
-
-  static const _skyDark = WiggyTokens(
-    sectionHeader: Color(0xFF1A365D),
-    sectionHeaderText: Color(0xFFBEE3F8),
+  /// Cool blue — icy fields, strong blue accent.
+  static const _sky = WiggyTokens(
+    sectionHeader: Color(0xFFBEE3F8),
+    sectionHeaderText: Color(0xFF0C2D48),
     tallyBox: Color(0xFF2B6CB0),
-    tallyField: Color(0xFF122033),
-    hairline: Color(0xFF1E2F45),
-    accent: Color(0xFF63B3ED),
+    tallyField: Color(0xFFE6F4FF),
+    hairline: Color(0xFFB8D4EA),
+    accent: Color(0xFF1A4B8C),
+  );
+
+  /// Warm light sand — cream surfaces, amber accent.
+  static const _sand = WiggyTokens(
+    sectionHeader: Color(0xFFF3E0C4),
+    sectionHeaderText: Color(0xFF5C3D1E),
+    tallyBox: Color(0xFFD4A373),
+    tallyField: Color(0xFFFFF8EF),
+    hairline: Color(0xFFE8D9C4),
+    accent: Color(0xFFB5651D),
+  );
+
+  /// Soft blush — pale rose headers, rose accent.
+  static const _blush = WiggyTokens(
+    sectionHeader: Color(0xFFF8D7E0),
+    sectionHeaderText: Color(0xFF6B2D45),
+    tallyBox: Color(0xFFE8A0B0),
+    tallyField: Color(0xFFFFF0F4),
+    hairline: Color(0xFFF0D0DA),
+    accent: Color(0xFFC2185B),
   );
 
   @override
@@ -118,58 +119,36 @@ class WiggyTokens extends ThemeExtension<WiggyTokens> {
   }
 }
 
-Color primaryForTheme(AppThemeId id, {required bool dark}) {
+Color primaryForTheme(AppThemeId id, {bool dark = false}) {
   switch (id) {
     case AppThemeId.classic:
-      return dark ? const Color(0xFF8FC4E8) : const Color(0xFF1B2A4A);
+      return const Color(0xFF1B2A4A);
     case AppThemeId.forest:
-      return dark ? const Color(0xFF66BB6A) : const Color(0xFF0B3D2E);
+      return const Color(0xFF081C15);
     case AppThemeId.sky:
-      return dark ? const Color(0xFF63B3ED) : const Color(0xFF1A365D);
+      return const Color(0xFF0C2D48);
+    case AppThemeId.sand:
+      return const Color(0xFF5C3D1E);
+    case AppThemeId.blush:
+      return const Color(0xFF6B2D45);
   }
 }
 
-Color scaffoldForTheme(AppThemeId id, {required bool dark}) {
-  if (!dark) {
-    switch (id) {
-      case AppThemeId.classic:
-        return const Color(0xFFF4F6FA);
-      case AppThemeId.forest:
-        return const Color(0xFFF3F7F4);
-      case AppThemeId.sky:
-        return const Color(0xFFF0F6FB);
-    }
-  }
+Color scaffoldForTheme(AppThemeId id, {bool dark = false}) {
   switch (id) {
     case AppThemeId.classic:
-      return const Color(0xFF121820);
+      return const Color(0xFFF4F6FA);
     case AppThemeId.forest:
-      return const Color(0xFF0D1F17);
+      return const Color(0xFFEFF7F1);
     case AppThemeId.sky:
-      return const Color(0xFF0B1524);
+      return const Color(0xFFEEF5FB);
+    case AppThemeId.sand:
+      return const Color(0xFFFAF6F0);
+    case AppThemeId.blush:
+      return const Color(0xFFFCF5F7);
   }
 }
 
-Color surfaceForTheme(AppThemeId id, {required bool dark}) {
-  if (!dark) return Colors.white;
-  switch (id) {
-    case AppThemeId.classic:
-      return const Color(0xFF1B2433);
-    case AppThemeId.forest:
-      return const Color(0xFF14261E);
-    case AppThemeId.sky:
-      return const Color(0xFF122033);
-  }
-}
+Color surfaceForTheme(AppThemeId id, {bool dark = false}) => Colors.white;
 
-Color onPrimaryForTheme(AppThemeId id, {required bool dark}) {
-  if (!dark) return Colors.white;
-  switch (id) {
-    case AppThemeId.classic:
-      return const Color(0xFF121820);
-    case AppThemeId.forest:
-      return const Color(0xFF0D1F17);
-    case AppThemeId.sky:
-      return const Color(0xFF0B1524);
-  }
-}
+Color onPrimaryForTheme(AppThemeId id, {bool dark = false}) => Colors.white;
