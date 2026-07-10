@@ -35,4 +35,25 @@ void main() {
     );
     expect(r.toMap()['status'], 'accepted');
   });
+
+  test('parse maps completed to closed', () {
+    expect(
+      StaffRequestStatusX.parse('completed'),
+      StaffRequestStatus.closed,
+    );
+  });
+
+  test('fromMap reads source and assignee', () {
+    final r = StaffRequest.fromMap('1', {
+      'text': 'Soap',
+      'employeeName': 'Alex',
+      'status': 'assigned',
+      'source': 'manager_assign',
+      'assigneeName': 'Alex',
+      'assigneeProfileKey': 'alex',
+    });
+    expect(r.source, StaffRequestSource.managerAssign);
+    expect(r.status, StaffRequestStatus.assigned);
+    expect(r.assigneeProfileKey, 'alex');
+  });
 }

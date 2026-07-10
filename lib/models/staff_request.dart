@@ -1,23 +1,62 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum StaffRequestStatus { pending, accepted, completed, dismissed }
+enum StaffRequestStatus {
+  pending,
+  accepted,
+  assigned,
+  awaitingReview,
+  closed,
+  dismissed,
+  /// Legacy wire value only — parse maps to [closed]. Prefer [closed] in code.
+  completed,
+}
+
+enum StaffRequestSource { employeeAsk, managerAssign, employeePersonal }
 
 extension StaffRequestStatusX on StaffRequestStatus {
-  String get firestoreValue => name;
+  String get firestoreValue => switch (this) {
+        StaffRequestStatus.completed => 'closed',
+        _ => name,
+      };
 
   String get employeeLabel => switch (this) {
         StaffRequestStatus.pending => 'Sent',
         StaffRequestStatus.accepted => 'Accepted',
+        StaffRequestStatus.assigned => 'To-do',
+        StaffRequestStatus.awaitingReview => 'Waiting review',
+        StaffRequestStatus.closed => 'Done',
         StaffRequestStatus.completed => 'Done',
         StaffRequestStatus.dismissed => 'Dismissed',
       };
 
   static StaffRequestStatus parse(String? raw) {
     if (raw == null || raw.isEmpty) return StaffRequestStatus.pending;
+    if (raw == 'completed') return StaffRequestStatus.closed;
     for (final s in StaffRequestStatus.values) {
+      if (s == StaffRequestStatus.completed) continue;
       if (s.name == raw) return s;
     }
     return StaffRequestStatus.pending;
+  }
+}
+
+extension StaffRequestSourceX on StaffRequestSource {
+  String get firestoreValue => switch (this) {
+        StaffRequestSource.employeeAsk => 'employee_ask',
+        StaffRequestSource.managerAssign => 'manager_assign',
+        StaffRequestSource.employeePersonal => 'employee_personal',
+      };
+
+  bool get isManagerAssigned =>
+      this == StaffRequestSource.managerAssign ||
+      this == StaffRequestSource.employeeAsk;
+
+  static StaffRequestSource parse(String? raw) {
+    return switch (raw) {
+      'manager_assign' => StaffRequestSource.managerAssign,
+      'employee_personal' => StaffRequestSource.employeePersonal,
+      _ => StaffRequestSource.employeeAsk,
+    };
   }
 }
 
@@ -28,7 +67,18 @@ class StaffRequest {
     required this.employeeName,
     this.employeeProfileKey,
     this.presetId,
+    this.source = StaffRequestSource.employeeAsk,
     this.status = StaffRequestStatus.pending,
+    this.assigneeName,
+    this.assigneeProfileKey,
+    this.assignedAt,
+    this.assignedByUid,
+    this.dueAt,
+    this.completionNote,
+    this.completionPresetId,
+    this.completionPresetLabel,
+    this.reviewedAt,
+    this.reviewedByUid,
     this.createdAt,
     this.acceptedAt,
     this.acceptedByUid,
@@ -42,7 +92,18 @@ class StaffRequest {
   final String employeeName;
   final String? employeeProfileKey;
   final String? presetId;
+  final StaffRequestSource source;
   final StaffRequestStatus status;
+  final String? assigneeName;
+  final String? assigneeProfileKey;
+  final DateTime? assignedAt;
+  final String? assignedByUid;
+  final DateTime? dueAt;
+  final String? completionNote;
+  final String? completionPresetId;
+  final String? completionPresetLabel;
+  final DateTime? reviewedAt;
+  final String? reviewedByUid;
   final DateTime? createdAt;
   final DateTime? acceptedAt;
   final String? acceptedByUid;
@@ -50,28 +111,7 @@ class StaffRequest {
   final String? completedByUid;
   final DateTime? dismissedAt;
 
-  StaffRequest copyWith({
-    StaffRequestStatus? status,
-    DateTime? acceptedAt,
-    String? acceptedByUid,
-    DateTime? completedAt,
-    String? completedByUid,
-    DateTime? dismissedAt,
-  }) =>
-      StaffRequest(
-        id: id,
-        text: text,
-        employeeName: employeeName,
-        employeeProfileKey: employeeProfileKey,
-        presetId: presetId,
-        status: status ?? this.status,
-        createdAt: createdAt,
-        acceptedAt: acceptedAt ?? this.acceptedAt,
-        acceptedByUid: acceptedByUid ?? this.acceptedByUid,
-        completedAt: completedAt ?? this.completedAt,
-        completedByUid: completedByUid ?? this.completedByUid,
-        dismissedAt: dismissedAt ?? this.dismissedAt,
-      );
+  bool get isPersonal => source == StaffRequestSource.employeePersonal;
 
   Map<String, dynamic> toMap() => {
         'text': text.trim(),
@@ -79,7 +119,21 @@ class StaffRequest {
         if (employeeProfileKey != null)
           'employeeProfileKey': employeeProfileKey,
         if (presetId != null) 'presetId': presetId,
+        'source': source.firestoreValue,
         'status': status.firestoreValue,
+        if (assigneeName != null) 'assigneeName': assigneeName,
+        if (assigneeProfileKey != null)
+          'assigneeProfileKey': assigneeProfileKey,
+        if (assignedAt != null) 'assignedAt': Timestamp.fromDate(assignedAt!),
+        if (assignedByUid != null) 'assignedByUid': assignedByUid,
+        if (dueAt != null) 'dueAt': Timestamp.fromDate(dueAt!),
+        if (completionNote != null) 'completionNote': completionNote,
+        if (completionPresetId != null)
+          'completionPresetId': completionPresetId,
+        if (completionPresetLabel != null)
+          'completionPresetLabel': completionPresetLabel,
+        if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
+        if (reviewedByUid != null) 'reviewedByUid': reviewedByUid,
         'createdAt': createdAt != null
             ? Timestamp.fromDate(createdAt!)
             : FieldValue.serverTimestamp(),
@@ -100,7 +154,18 @@ class StaffRequest {
       employeeName: (data['employeeName'] as String? ?? '').trim(),
       employeeProfileKey: data['employeeProfileKey'] as String?,
       presetId: data['presetId'] as String?,
+      source: StaffRequestSourceX.parse(data['source'] as String?),
       status: StaffRequestStatusX.parse(data['status'] as String?),
+      assigneeName: data['assigneeName'] as String?,
+      assigneeProfileKey: data['assigneeProfileKey'] as String?,
+      assignedAt: asDate(data['assignedAt']),
+      assignedByUid: data['assignedByUid'] as String?,
+      dueAt: asDate(data['dueAt']),
+      completionNote: data['completionNote'] as String?,
+      completionPresetId: data['completionPresetId'] as String?,
+      completionPresetLabel: data['completionPresetLabel'] as String?,
+      reviewedAt: asDate(data['reviewedAt']),
+      reviewedByUid: data['reviewedByUid'] as String?,
       createdAt: asDate(data['createdAt']),
       acceptedAt: asDate(data['acceptedAt']),
       acceptedByUid: data['acceptedByUid'] as String?,
