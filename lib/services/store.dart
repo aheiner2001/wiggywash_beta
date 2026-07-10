@@ -878,7 +878,10 @@ class Store extends ChangeNotifier {
       return null;
     } catch (e) {
       debugPrint('createPendingCompany error: $e');
-      return 'Could not create your company. Check your connection.';
+      return mapFirestoreUserError(
+        e,
+        fallback: 'Could not create your company. Check your connection.',
+      );
     }
   }
 

@@ -147,7 +147,14 @@ service cloud.firestore {
 
       match /managerInvites/{inviteId} {
         allow read: if canManageCompany(companyId) || isRealUser();
-        allow create, delete: if canManageCompany(companyId);
+        // Self-service company signup writes the creator's invite in the same
+        // batch as role/companyId — rules can't see those yet, so allow a
+        // real user to create an invite they claim for themselves.
+        allow create: if canManageCompany(companyId)
+          || (isRealUser()
+              && request.resource.data.claimedUid == request.auth.uid
+              && request.resource.data.invitedByUid == request.auth.uid);
+        allow delete: if canManageCompany(companyId);
         allow update: if canManageCompany(companyId)
           || (isRealUser()
               && request.resource.data.diff(resource.data).affectedKeys()
