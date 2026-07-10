@@ -27,11 +27,16 @@ void main() {
     expect(loaded.density, UiDensity.compact);
   });
 
-  test('compact padding is tighter than comfortable', () {
+  test('compact is tighter and uses smaller steppers than comfortable', () {
     final c = UiDensity.comfortable;
     final k = UiDensity.compact;
     expect(k.pagePadding, lessThan(c.pagePadding));
+    expect(k.sectionGap, lessThan(c.sectionGap));
     expect(k.tallyVerticalMargin, lessThan(c.tallyVerticalMargin));
-    expect(k.stepButtonSize, greaterThanOrEqualTo(44));
+    expect(k.peopleCardPadding, lessThan(c.peopleCardPadding));
+    expect(k.loginCardPadding, lessThan(c.loginCardPadding));
+    expect(k.stepButtonSize, lessThan(c.stepButtonSize));
+    expect(c.stepButtonSize - k.stepButtonSize, greaterThanOrEqualTo(8));
+    expect(c.pagePadding - k.pagePadding, greaterThanOrEqualTo(6));
   });
 }

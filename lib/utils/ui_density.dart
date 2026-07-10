@@ -6,34 +6,34 @@ enum UiDensity { comfortable, compact }
 
 extension UiDensityTokens on UiDensity {
   double get pagePadding => switch (this) {
-        UiDensity.comfortable => 14,
-        UiDensity.compact => 10,
+        UiDensity.comfortable => 16,
+        UiDensity.compact => 8,
       };
 
   double get sectionGap => switch (this) {
-        UiDensity.comfortable => 12,
-        UiDensity.compact => 8,
+        UiDensity.comfortable => 14,
+        UiDensity.compact => 6,
       };
 
   double get loginCardPadding => switch (this) {
         UiDensity.comfortable => 32,
-        UiDensity.compact => 20,
+        UiDensity.compact => 16,
       };
 
   double get tallyVerticalMargin => switch (this) {
-        UiDensity.comfortable => 5,
-        UiDensity.compact => 3,
+        UiDensity.comfortable => 8,
+        UiDensity.compact => 2,
       };
 
   /// Minimum circular +/- diameter. Phone one-thumb pass may raise further.
   double get stepButtonSize => switch (this) {
-        UiDensity.comfortable => 44,
-        UiDensity.compact => 44,
+        UiDensity.comfortable => 52,
+        UiDensity.compact => 40,
       };
 
   double get peopleCardPadding => switch (this) {
-        UiDensity.comfortable => 14,
-        UiDensity.compact => 10,
+        UiDensity.comfortable => 16,
+        UiDensity.compact => 8,
       };
 }
 
