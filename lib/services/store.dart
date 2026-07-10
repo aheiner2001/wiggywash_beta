@@ -1902,24 +1902,7 @@ class Store extends ChangeNotifier {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
     try {
-      final company = _activeCompany;
-      final used = entitlement.seatsUsed(
-        _companyLocations.map((l) => entitlement.effectiveAccess(
-              l.accessStatus,
-              trialEndsAt: l.trialEndsAt,
-            )),
-      );
-      final seats = company?.purchasedSeats ?? 1;
-      final canSeat = entitlement.canActivateAnother(
-        purchasedSeats: seats,
-        seatsUsed: used,
-      );
-      final status = canSeat
-          ? LocationAccessStatus.trial
-          : LocationAccessStatus.readOnly;
-      final trialEnd = canSeat
-          ? DateTime.now().add(const Duration(days: 14))
-          : null;
+      final trialEnd = DateTime.now().add(const Duration(days: 14));
       final ref = _locationsCol.doc();
       await ref.set(
         Location(
@@ -1927,7 +1910,7 @@ class Store extends ChangeNotifier {
           name: trimmed,
           city: city.trim(),
           siteCode: siteCode.trim(),
-          accessStatus: status,
+          accessStatus: LocationAccessStatus.trial,
           trialEndsAt: trialEnd,
         ).toMap(),
       );
@@ -1946,8 +1929,10 @@ class Store extends ChangeNotifier {
   }) async {
     final company = _activeCompany;
     if (company == null) return 'No active company.';
-    if (status == LocationAccessStatus.active ||
-        status == LocationAccessStatus.trial) {
+    if (status == LocationAccessStatus.comp) {
+      return 'Only a platform admin can mark a site as comp.';
+    }
+    if (status == LocationAccessStatus.active) {
       final others = _companyLocations.where((l) => l.id != locationId).map(
             (l) => entitlement.effectiveAccess(
               l.accessStatus,
@@ -1959,7 +1944,7 @@ class Store extends ChangeNotifier {
         purchasedSeats: company.purchasedSeats,
         seatsUsed: used,
       )) {
-        return 'No seats left. Ask platform admin to add seats.';
+        return 'No seats left. Buy more seats or ask platform admin.';
       }
     }
     try {
@@ -2004,6 +1989,48 @@ class Store extends ChangeNotifier {
       debugPrint('adminSetPurchasedSeats error: $e');
       return 'Could not update seats.';
     }
+  }
+
+  Future<String?> adminSetLocationAccessStatus({
+    required String companyId,
+    required String locationId,
+    required LocationAccessStatus status,
+    DateTime? trialEndsAt,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'accessStatus': status.firestoreValue,
+      };
+      if (status == LocationAccessStatus.trial) {
+        data['trialEndsAt'] = Timestamp.fromDate(
+          trialEndsAt ?? DateTime.now().add(const Duration(days: 14)),
+        );
+      } else {
+        data['trialEndsAt'] = FieldValue.delete();
+      }
+      await _companiesCol
+          .doc(companyId)
+          .collection('locations')
+          .doc(locationId)
+          .set(data, SetOptions(merge: true));
+      if (_activeCompanyId == companyId) {
+        await previewCompany(companyId);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('adminSetLocationAccessStatus error: $e');
+      return 'Could not update location access.';
+    }
+  }
+
+  Future<List<Location>> locationsForCompany(String companyId) async {
+    final snap = await _companiesCol
+        .doc(companyId)
+        .collection('locations')
+        .orderBy('name')
+        .get();
+    return snap.docs.map(Location.fromDoc).toList();
   }
 
   Future<String?> setLocationActive(String locationId, bool active) async {
