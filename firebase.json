@@ -1,1 +1,38 @@
-{"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"},"flutter":{"platforms":{"android":{"default":{"projectId":"wiggywash-expanded","appId":"1:242130286253:android:37f9e3e10c99d2af263824","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"wiggywash-expanded","configurations":{"android":"1:242130286253:android:37f9e3e10c99d2af263824","web":"1:242130286253:web:5e57ccab0e24eceb263824"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "wiggywash",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "*.local"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "wiggywash-expanded",
+          "appId": "1:242130286253:android:37f9e3e10c99d2af263824",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "wiggywash-expanded",
+          "configurations": {
+            "android": "1:242130286253:android:37f9e3e10c99d2af263824",
+            "web": "1:242130286253:web:5e57ccab0e24eceb263824"
+          }
+        }
+      }
+    }
+  }
+}
