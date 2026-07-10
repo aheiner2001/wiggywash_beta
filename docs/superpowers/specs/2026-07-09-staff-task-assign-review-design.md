@@ -85,7 +85,7 @@ Legacy `completed` is treated as `closed` in clients.
 
 ### Employee Requests
 
-- Title may stay **Requests**; page includes **My to-do** + quick/custom asks.
+- AppBar title stays **Requests**; page includes **My to-do** + quick/custom asks.
 - **My to-do:** manager-assigned (red accent, due-soon then newest) above personal; add/remove personal; **Complete** on manager-assigned opens sheet (preset and/or note ≤120).
 - Due line: `Due · h:mm a` (include date when not today).
 - Clear finished / closed items via existing clear pattern where applicable.
@@ -131,7 +131,7 @@ Same shape as `requestPresets`: `label`, `sortOrder`, `createdAt`, `createdByUid
 - **Managers:** CRUD completion presets; all status transitions; assign; delete/dismiss; close/reopen; create `manager_assign`.
 - **Employees (signed-in):** create `employee_ask` and `employee_personal`; update **own** `assigned` → `awaitingReview` with note and/or preset; delete/remove **own** personal only.
 - Employees cannot assign, dismiss, close, or reopen others’ items.
-- Personal todos (`employee_personal`) are readable by managers in raw data if rules allow location read today; **product UI must not show them on manager boards**. Prefer rules that restrict manager list queries if practical; otherwise client filter is required and documented.
+- Personal todos (`employee_personal`): same location read pattern as today; **manager UI must client-filter them out** of Incoming/To-do. No separate private collection in v1.
 
 ---
 
@@ -139,7 +139,7 @@ Same shape as `requestPresets`: `label`, `sortOrder`, `createdAt`, `createdByUid
 
 - Assign with empty Team → message to add workers first.
 - Complete requires note **or** completion preset (at least one).
-- Reopen → `assigned`; clear review timestamps; keep text, due, assignee; keep completion note visible to manager history optional — v1 may leave last note on doc until next complete overwrites.
+- Reopen → `assigned`; clear `reviewedAt` / `reviewedByUid`; keep text, due, assignee. Leave prior `completionNote` / preset on the doc until the next complete overwrites them.
 - Missing `dueAt` → no due line.
 - Manager **Mark complete** on `accepted` skips review (direct `closed`).
 
