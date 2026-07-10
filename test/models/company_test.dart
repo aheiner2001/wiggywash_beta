@@ -58,4 +58,23 @@ void main() {
   test('normalizeCode uppercases and trims', () {
     expect(Company.normalizeCode('  wiggy '), 'WIGGY');
   });
+
+  test('parses purchasedSeats default 1 when missing', () {
+    final c = Company.fromMap('abc', {
+      'name': 'Wiggy',
+      'companyCode': 'WIGGY',
+      'status': 'active',
+    });
+    expect(c.purchasedSeats, 1);
+  });
+
+  test('parses purchasedSeats', () {
+    final c = Company.fromMap('abc', {
+      'name': 'Wiggy',
+      'companyCode': 'WIGGY',
+      'status': 'active',
+      'purchasedSeats': 12,
+    });
+    expect(c.purchasedSeats, 12);
+  });
 }

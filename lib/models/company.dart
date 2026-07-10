@@ -26,6 +26,8 @@ class Company {
     this.primaryColor,
     this.themeId = 'classic',
     this.googleReviewUrl,
+    this.purchasedSeats = 1,
+    this.billingStatus,
     this.createdAt,
     this.approvedAt,
     this.approvedBy,
@@ -44,6 +46,10 @@ class Company {
   final String themeId;
   /// Public Google review / Maps link shown as a QR for customers.
   final String? googleReviewUrl;
+  /// Paid location seats for this company (v1 manual / admin).
+  final int purchasedSeats;
+  /// Optional display: ok | past_due | trialing
+  final String? billingStatus;
   final DateTime? createdAt;
   final DateTime? approvedAt;
   final String? approvedBy;
@@ -54,6 +60,12 @@ class Company {
   bool get isActive => status == CompanyStatus.active;
 
   static String normalizeCode(String raw) => raw.trim().toUpperCase();
+
+  static int _parseSeats(dynamic raw) {
+    if (raw is int && raw >= 0) return raw;
+    if (raw is num && raw.toInt() >= 0) return raw.toInt();
+    return 1;
+  }
 
   Company copyWith({
     String? name,
@@ -66,6 +78,9 @@ class Company {
     String? themeId,
     String? googleReviewUrl,
     bool clearGoogleReviewUrl = false,
+    int? purchasedSeats,
+    String? billingStatus,
+    bool clearBillingStatus = false,
     DateTime? createdAt,
     DateTime? approvedAt,
     String? approvedBy,
@@ -85,6 +100,10 @@ class Company {
         googleReviewUrl: clearGoogleReviewUrl
             ? null
             : (googleReviewUrl ?? this.googleReviewUrl),
+        purchasedSeats: purchasedSeats ?? this.purchasedSeats,
+        billingStatus: clearBillingStatus
+            ? null
+            : (billingStatus ?? this.billingStatus),
         createdAt: createdAt ?? this.createdAt,
         approvedAt: approvedAt ?? this.approvedAt,
         approvedBy: approvedBy ?? this.approvedBy,
@@ -98,9 +117,11 @@ class Company {
         'companyCode': normalizeCode(companyCode),
         'status': status.firestoreValue,
         'themeId': themeId,
+        'purchasedSeats': purchasedSeats,
         if (logoUrl != null) 'logoUrl': logoUrl,
         if (primaryColor != null) 'primaryColor': primaryColor,
         if (googleReviewUrl != null) 'googleReviewUrl': googleReviewUrl,
+        if (billingStatus != null) 'billingStatus': billingStatus,
         'createdAt': createdAt != null
             ? Timestamp.fromDate(createdAt!)
             : FieldValue.serverTimestamp(),
@@ -115,6 +136,7 @@ class Company {
     final ts = data['createdAt'];
     final ats = data['approvedAt'];
     final review = (data['googleReviewUrl'] as String?)?.trim();
+    final billing = (data['billingStatus'] as String?)?.trim();
     return Company(
       id: id,
       name: data['name'] as String? ?? id,
@@ -125,6 +147,8 @@ class Company {
       primaryColor: data['primaryColor'] as String?,
       themeId: AppThemeIdX.parse(data['themeId'] as String?).firestoreValue,
       googleReviewUrl: (review == null || review.isEmpty) ? null : review,
+      purchasedSeats: _parseSeats(data['purchasedSeats']),
+      billingStatus: (billing == null || billing.isEmpty) ? null : billing,
       createdAt: ts is Timestamp ? ts.toDate() : null,
       approvedAt: ats is Timestamp ? ats.toDate() : null,
       approvedBy: data['approvedBy'] as String?,
