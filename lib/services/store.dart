@@ -1368,7 +1368,7 @@ class Store extends ChangeNotifier {
         'assigneeName': name,
         'assigneeProfileKey': staffRequestProfileKey(name),
         'assignedAt': FieldValue.serverTimestamp(),
-        if (uid != null) 'assignedByUid': uid,
+        'assignedByUid': ?uid,
       };
       if (dueAt != null) {
         data['dueAt'] = Timestamp.fromDate(dueAt);
@@ -1408,7 +1408,7 @@ class Store extends ChangeNotifier {
         'source': StaffRequestSource.managerAssign.firestoreValue,
         'status': StaffRequestStatus.assigned.firestoreValue,
         'assignedAt': FieldValue.serverTimestamp(),
-        if (uid != null) 'assignedByUid': uid,
+        'assignedByUid': ?uid,
         if (dueAt != null) 'dueAt': Timestamp.fromDate(dueAt),
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -1495,12 +1495,11 @@ class Store extends ChangeNotifier {
       await loc.collection('staffRequests').doc(id).set({
         'status': StaffRequestStatus.awaitingReview.firestoreValue,
         'completionNote': note.trim(),
-        if (completionPresetId != null)
-          'completionPresetId': completionPresetId,
+        'completionPresetId': ?completionPresetId,
         if (completionPresetLabel != null)
           'completionPresetLabel': completionPresetLabel.trim(),
         'completedAt': FieldValue.serverTimestamp(),
-        if (uid != null) 'completedByUid': uid,
+        'completedByUid': ?uid,
         'revisionNote': FieldValue.delete(),
         'revisionRequestedAt': FieldValue.delete(),
       }, SetOptions(merge: true));
