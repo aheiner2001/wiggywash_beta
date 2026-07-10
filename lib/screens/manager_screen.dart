@@ -8,6 +8,7 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../utils/csv.dart';
 import '../utils/exporter.dart';
+import '../utils/ui_density.dart';
 import '../widgets/challenge_card.dart';
 import '../widgets/mini_scorecard_card.dart';
 import '../widgets/profile_menu.dart';
@@ -45,11 +46,16 @@ class _ManagerScreenState extends State<ManagerScreen> {
   DateTime _day = DateTime.now();
   _Period _period = _Period.day;
   _PeopleLayout _peopleLayout = _PeopleLayout.list;
+  UiDensity _density = UiDensity.comfortable;
 
   @override
   void initState() {
     super.initState();
     _loadPeopleLayout();
+    UiDensityPrefs.load().then((p) {
+      if (!mounted) return;
+      setState(() => _density = p.density);
+    });
   }
 
   Future<void> _loadPeopleLayout() async {
@@ -369,7 +375,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     _peopleLayout == _PeopleLayout.cards ? 1100 : 760,
               ),
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
+                padding: EdgeInsets.fromLTRB(
+                  _density.pagePadding,
+                  _density.pagePadding,
+                  _density.pagePadding,
+                  32,
+                ),
                 children: [
                   _PeriodBar(
                     period: _period,
@@ -379,22 +390,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     onNext: () => _shiftPeriod(1),
                     onPickDate: _pickDay,
                   ),
-                  const SizedBox(height: 12),
-                  ChallengeCard(
-                    onEdit: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ChallengeEditorScreen(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const _SeeAllToggle(),
-                  const SizedBox(height: 12),
+                  SizedBox(height: _density.sectionGap),
                   _TeamTotals(submissions: all),
-                  const SizedBox(height: 12),
+                  SizedBox(height: _density.sectionGap),
                   if (all.isNotEmpty) ...[
-                    _TrendsCard(series: _trendSeries()),
-                    const SizedBox(height: 12),
                     SegmentedButton<_PeopleLayout>(
                       segments: const [
                         ButtonSegment(
@@ -411,26 +410,43 @@ class _ManagerScreenState extends State<ManagerScreen> {
                       selected: {_peopleLayout},
                       onSelectionChanged: (s) => _setPeopleLayout(s.first),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: _density.sectionGap),
                   ],
                   if (all.isEmpty && Store.instance.submissionsLoading) ...[
                     const SkeletonCard(lines: 3),
-                    const SizedBox(height: 10),
+                    SizedBox(height: _density.sectionGap - 2),
                     const SkeletonCard(lines: 3),
                   ] else if (all.isEmpty)
                     const _EmptyState()
                   else if (_peopleLayout == _PeopleLayout.list)
                     ...(_byEmployee(all).entries.map(
                           (e) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
+                            padding: EdgeInsets.only(bottom: _density.sectionGap - 2),
                             child: _EmployeeCard(
                               name: e.key,
                               submissions: e.value,
+                              padding: _density.peopleCardPadding,
                             ),
                           ),
                         ))
                   else
                     _PeopleCardsGrid(byEmployee: _byEmployee(all)),
+                  SizedBox(height: _density.sectionGap + 8),
+                  const Text('More', style: TextStyles.caption),
+                  SizedBox(height: _density.sectionGap - 4),
+                  const _SeeAllToggle(),
+                  SizedBox(height: _density.sectionGap),
+                  ChallengeCard(
+                    onEdit: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ChallengeEditorScreen(),
+                      ),
+                    ),
+                  ),
+                  if (all.isNotEmpty) ...[
+                    SizedBox(height: _density.sectionGap),
+                    _TrendsCard(series: _trendSeries()),
+                  ],
                 ],
               ),
             ),
@@ -708,7 +724,7 @@ class _TeamTotals extends StatelessWidget {
                 value: revenue,
                 format: _money.format,
                 style: const TextStyle(
-                  fontSize: 26,
+                  fontSize: 32,
                   fontWeight: FontWeight.w900,
                   color: AppColors.success,
                 ),
@@ -776,9 +792,14 @@ class _Tile extends StatelessWidget {
 }
 
 class _EmployeeCard extends StatelessWidget {
-  const _EmployeeCard({required this.name, required this.submissions});
+  const _EmployeeCard({
+    required this.name,
+    required this.submissions,
+    this.padding = 14,
+  });
   final String name;
   final List<Submission> submissions;
+  final double padding;
 
   @override
   Widget build(BuildContext context) {
@@ -794,7 +815,7 @@ class _EmployeeCard extends StatelessWidget {
     final badgeColor = baColor(conv, latestGoal);
 
     return AppCard(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(padding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
