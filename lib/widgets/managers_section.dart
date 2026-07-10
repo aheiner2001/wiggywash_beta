@@ -65,7 +65,10 @@ class _ManagersSectionState extends State<ManagersSection> {
     }
     _email.clear();
     _name.clear();
-    showStoreMessage(context, 'Manager invited');
+    showStoreMessage(
+      context,
+      'Invite saved — they must sign in with that Google email.',
+    );
     await _reload();
   }
 

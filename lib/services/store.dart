@@ -19,6 +19,7 @@ import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../models/worker.dart';
 import '../utils/brand_color.dart';
+import '../utils/firestore_user_error.dart';
 import '../utils/manager_invite_logic.dart';
 import 'company_migration.dart' as company_migration;
 
@@ -761,7 +762,15 @@ class Store extends ChangeNotifier {
       return null;
     } catch (e) {
       debugPrint('addManagerInvite error: $e');
-      return 'Could not add manager.';
+      String? code;
+      try {
+        code = (e as dynamic).code as String?;
+      } catch (_) {}
+      return mapFirestoreUserError(
+        e,
+        code: code,
+        fallback: 'Could not add manager.',
+      );
     }
   }
 
