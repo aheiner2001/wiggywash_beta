@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/scorecard_config.dart';
 import '../models/submission.dart';
+import '../services/store.dart';
 import '../theme.dart';
+import '../widgets/mini_scorecard_card.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 
@@ -18,26 +21,37 @@ class ScorecardSharePreviewScreen extends StatelessWidget {
   final String employeeName;
   final Submission submission;
 
-  String get _shareText => (StringBuffer()
-        ..writeln('WIGGY WASH — Scorecard')
-        ..writeln(employeeName)
-        ..writeln('')
-        ..writeln('Memberships: ${submission.totalMemberships}')
-        ..writeln('Single washes: ${submission.totalSingleWashes}')
-        ..writeln('Shop sales: ${submission.totalShopSales}')
-        ..writeln(
-          'BA: ${submission.conversionRate.toStringAsFixed(0)}% (goal ${submission.baGoal.toStringAsFixed(0)}%)',
-        )
-        ..writeln(
-          'Total revenue: ${_money.format(submission.grandTotalRevenue)}',
-        ))
-      .toString();
+  String get _shareText {
+    final s = submission;
+    final buf = StringBuffer()
+      ..writeln('WIGGY WASH — Scorecard')
+      ..writeln(employeeName)
+      ..writeln(
+        'BA ${s.conversionRate.toStringAsFixed(0)}% (goal ${s.baGoal.toStringAsFixed(0)}%)',
+      )
+      ..writeln('');
+    for (final section in Store.instance.enabledSections) {
+      final lines = <String>[];
+      for (final item in itemsFor(section)) {
+        final c = s.countOf(item.id);
+        if (c <= 0) continue;
+        lines.add('${item.label}: ×$c');
+      }
+      if (lines.isEmpty) continue;
+      buf.writeln(section.title.toUpperCase());
+      for (final line in lines) {
+        buf.writeln(line);
+      }
+      buf.writeln('');
+    }
+    buf.writeln('Total: ${_money.format(s.grandTotalRevenue)}');
+    return buf.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final s = submission;
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2F5),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Share preview'),
         actions: [
@@ -53,73 +67,19 @@ class ScorecardSharePreviewScreen extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
               children: [
                 const Text(
                   'Preview the full card, then share or screenshot.',
                   style: TextStyles.caption,
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
-                Transform.scale(
-                  scale: 0.92,
-                  alignment: Alignment.topCenter,
-                  child: Material(
-                    color: Colors.white,
-                    elevation: 2,
-                    shadowColor: const Color(0x22000000),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'WIGGY WASH',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 2,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            employeeName,
-                            textAlign: TextAlign.center,
-                            style: TextStyles.heading,
-                          ),
-                          const SizedBox(height: 18),
-                          _row('Memberships', '${s.totalMemberships}'),
-                          _row('Single washes', '${s.totalSingleWashes}'),
-                          _row('Shop sales', '${s.totalShopSales}'),
-                          _row(
-                            'BA',
-                            '${s.conversionRate.toStringAsFixed(0)}%  ·  goal ${s.baGoal.toStringAsFixed(0)}%',
-                          ),
-                          const Divider(height: 28),
-                          Text(
-                            _money.format(s.grandTotalRevenue),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Total revenue',
-                            textAlign: TextAlign.center,
-                            style: TextStyles.caption,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 14),
+                MiniScorecardCard(
+                  name: employeeName,
+                  submissions: [submission],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: () => Share.share(_shareText),
                   icon: const Icon(Icons.ios_share_rounded),
@@ -129,21 +89,6 @@ class ScorecardSharePreviewScreen extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _row(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: TextStyles.body)),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-        ],
       ),
     );
   }

@@ -8,18 +8,17 @@ import '../theme.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 
-/// Compact per-employee scorecard for dashboard Cards mode.
+/// Full tally card — name + BA badge, section headers, line ×counts, total $.
+/// Used for manager Cards view and the Share to chat preview.
 class MiniScorecardCard extends StatelessWidget {
   const MiniScorecardCard({
     super.key,
     required this.name,
     required this.submissions,
-    this.compact = false,
   });
 
   final String name;
   final List<Submission> submissions;
-  final bool compact;
 
   int _count(String id) =>
       submissions.fold(0, (s, e) => s + e.countOf(id));
@@ -44,73 +43,29 @@ class MiniScorecardCard extends StatelessWidget {
     final badgeColor = baColor(conv, latestGoal);
     final sections = Store.instance.enabledSections;
 
-    if (compact) {
-      return AppCard(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: badgeColor,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: Text(
-                'BA ${conv.toStringAsFixed(0)}%',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const Spacer(),
-            Text(
-              _money.format(revenue),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '$memberships mem · $singles wash',
-              style: TextStyles.caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      );
-    }
-
     return AppCard(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(name, style: TextStyles.subheading),
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    height: 1.15,
+                  ),
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: badgeColor,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -120,7 +75,8 @@ class MiniScorecardCard extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
-                    fontSize: 11,
+                    fontSize: 12,
+                    letterSpacing: 0.3,
                   ),
                 ),
               ),
@@ -134,20 +90,27 @@ class MiniScorecardCard extends StatelessWidget {
                 if (c <= 0) continue;
                 rows.add(
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 5),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Text(item.label,
-                              style: TextStyles.caption
-                                  .copyWith(color: AppColors.textPrimary)),
-                        ),
-                        Text('×$c',
+                          child: Text(
+                            item.label,
                             style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                            )),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '×$c',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -157,31 +120,41 @@ class MiniScorecardCard extends StatelessWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Container(
+                    width: double.infinity,
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
                       color: AppColors.rose,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       section.title.toUpperCase(),
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 10,
-                        letterSpacing: 1.2,
+                        fontSize: 11,
+                        letterSpacing: 1.4,
                         fontWeight: FontWeight.w800,
                         color: AppColors.roseText,
                       ),
                     ),
                   ),
+                  const SizedBox(height: 4),
                   ...rows,
                 ],
               );
             }),
           ],
-          const SizedBox(height: 8),
-          Text(_money.format(revenue), style: TextStyles.subheading),
+          const SizedBox(height: 12),
+          Text(
+            _money.format(revenue),
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ],
       ),
     );
