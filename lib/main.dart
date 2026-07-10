@@ -10,7 +10,6 @@ import 'screens/scorecard_screen.dart';
 import 'screens/company_login_screen.dart';
 import 'services/store.dart';
 import 'theme.dart';
-import 'utils/brand_color.dart';
 import 'widgets/brand_header.dart';
 
 Future<void> main() async {
@@ -36,12 +35,15 @@ class WiggyWashApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: Store.instance,
       builder: (context, _) {
-        final primary =
-            parseBrandColor(Store.instance.activeCompany?.primaryColor);
+        final themeId =
+            AppThemeIdX.parse(Store.instance.activeCompany?.themeId);
         return MaterialApp(
           title: 'Wiggy Wash',
           debugShowCheckedModeBanner: false,
-          theme: buildTheme(primary: primary),
+          theme: buildTheme(
+            themeId: themeId,
+            dark: Store.instance.darkMode,
+          ),
           home: const _Root(),
         );
       },

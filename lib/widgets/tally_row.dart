@@ -28,14 +28,17 @@ class TallyRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final price = priceOf(item);
     final lineTotal = price != null ? count * price : null;
+    final tokens = Theme.of(context).extension<WiggyTokens>() ??
+        WiggyTokens.forId(AppThemeId.classic, dark: false);
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       margin: EdgeInsets.symmetric(vertical: verticalMargin),
       padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(AppRadius.field),
-        border: Border.all(color: AppColors.hairline),
+        border: Border.all(color: tokens.hairline),
       ),
       child: Row(
         children: [
@@ -46,18 +49,18 @@ class TallyRow extends StatelessWidget {
               children: [
                 Text(
                   item.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: scheme.onSurface,
                   ),
                 ),
                 if (price != null)
                   Text(
                     _money.format(price),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
-                      color: AppColors.textMuted,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -75,10 +78,10 @@ class TallyRow extends StatelessWidget {
             child: Text(
               '$count',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
+                color: scheme.onSurface,
               ),
             ),
           ),
@@ -113,8 +116,11 @@ class _StepButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<WiggyTokens>() ??
+        WiggyTokens.forId(AppThemeId.classic, dark: false);
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: enabled ? AppColors.navy : AppColors.hairline,
+      color: enabled ? scheme.primary : tokens.hairline,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -125,7 +131,9 @@ class _StepButton extends StatelessWidget {
           child: Icon(
             icon,
             size: size >= 48 ? 26 : 22,
-            color: enabled ? Colors.white : AppColors.textMuted,
+            color: enabled
+                ? scheme.onPrimary
+                : scheme.onSurface.withValues(alpha: 0.45),
           ),
         ),
       ),
@@ -139,23 +147,24 @@ class _TotalBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<WiggyTokens>() ??
+        WiggyTokens.forId(AppThemeId.classic, dark: false);
     return Container(
       width: 66,
       height: 44,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: AppColors.blue,
+        color: tokens.tallyBox,
         borderRadius: BorderRadius.circular(AppRadius.field),
-        border: Border.all(color: AppColors.blue.withValues(alpha: 0.0)),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Text(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: AppColors.navyDark,
+            color: tokens.sectionHeaderText,
           ),
         ),
       ),

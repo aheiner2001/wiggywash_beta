@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'theme/app_theme_id.dart';
+import 'theme/wiggy_tokens.dart';
+
+export 'theme/app_theme_id.dart';
+export 'theme/wiggy_tokens.dart';
+
 /// Central design system for Wiggy Wash. Mirrors the physical scorecard:
 /// white background, soft rose/pink section headers, blue tally boxes, and
 /// dark navy text + buttons. Tweak everything from here.
@@ -44,56 +50,68 @@ class AppSpacing {
   static const item = 8.0;
 }
 
-ThemeData buildTheme({Color? primary}) {
-  final brand = primary ?? AppColors.navy;
+ThemeData buildTheme({
+  AppThemeId themeId = AppThemeId.classic,
+  bool dark = false,
+}) {
+  final tokens = WiggyTokens.forId(themeId, dark: dark);
+  final brand = primaryForTheme(themeId, dark: dark);
+  final onPrimary = onPrimaryForTheme(themeId, dark: dark);
+  final surface = surfaceForTheme(themeId, dark: dark);
+  final scaffold = scaffoldForTheme(themeId, dark: dark);
+  final onSurface =
+      dark ? const Color(0xFFE8EEF6) : AppColors.textPrimary;
+  final muted = dark ? const Color(0xFF9AA7B8) : AppColors.textMuted;
+
   final scheme = ColorScheme.fromSeed(
     seedColor: brand,
-    brightness: Brightness.light,
+    brightness: dark ? Brightness.dark : Brightness.light,
   ).copyWith(
     primary: brand,
-    secondary: AppColors.accent,
-    surface: AppColors.surface,
-    onPrimary: Colors.white,
-    onSurface: AppColors.textPrimary,
+    secondary: tokens.accent,
+    surface: surface,
+    onPrimary: onPrimary,
+    onSurface: onSurface,
   );
 
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: Colors.white,
+    scaffoldBackgroundColor: scaffold,
     fontFamily: GoogleFonts.inter().fontFamily,
     textTheme: GoogleFonts.interTextTheme(),
   );
 
   return base.copyWith(
+    extensions: [tokens],
     appBarTheme: AppBarTheme(
       backgroundColor: brand,
-      foregroundColor: Colors.white,
+      foregroundColor: onPrimary,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: const TextStyle(
-        color: Colors.white,
+      titleTextStyle: TextStyle(
+        color: onPrimary,
         fontSize: 20,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.2,
       ),
     ),
     textTheme: base.textTheme.apply(
-      bodyColor: AppColors.textPrimary,
-      displayColor: AppColors.textPrimary,
+      bodyColor: onSurface,
+      displayColor: onSurface,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: brand,
-        foregroundColor: Colors.white,
+        foregroundColor: onPrimary,
         elevation: 0,
         minimumSize: const Size.fromHeight(52),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.button),
         ),
-        disabledBackgroundColor: AppColors.hairline,
-        disabledForegroundColor: AppColors.textMuted,
+        disabledBackgroundColor: tokens.hairline,
+        disabledForegroundColor: muted,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -109,24 +127,24 @@ ThemeData buildTheme({Color? primary}) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.blueSoft,
-      hintStyle: const TextStyle(color: AppColors.textMuted),
+      fillColor: tokens.tallyField,
+      hintStyle: TextStyle(color: muted),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.field),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: tokens.hairline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.field),
-        borderSide: const BorderSide(color: AppColors.hairline),
+        borderSide: BorderSide(color: tokens.hairline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.field),
         borderSide: BorderSide(color: brand, width: 2),
       ),
     ),
-    dividerTheme: const DividerThemeData(
-      color: AppColors.hairline,
+    dividerTheme: DividerThemeData(
+      color: tokens.hairline,
       thickness: 1,
       space: 1,
     ),
@@ -145,8 +163,8 @@ ThemeData buildTheme({Color? primary}) {
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         foregroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return Colors.white;
-          return AppColors.textPrimary;
+          if (states.contains(WidgetState.selected)) return onPrimary;
+          return onSurface;
         }),
         backgroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return brand;
@@ -172,12 +190,15 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<WiggyTokens>() ??
+        WiggyTokens.forId(AppThemeId.classic, dark: false);
+    final scheme = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(AppRadius.card);
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: scheme.surface,
         borderRadius: radius,
-        border: Border.all(color: AppColors.hairline),
+        border: Border.all(color: tokens.hairline),
         boxShadow: const [
           BoxShadow(
             color: Color(0x141B2A4A),
@@ -205,19 +226,21 @@ class SectionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<WiggyTokens>() ??
+        WiggyTokens.forId(AppThemeId.classic, dark: false);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 18),
       decoration: BoxDecoration(
-        color: AppColors.rose,
+        color: tokens.sectionHeader,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
         label.toUpperCase(),
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: AppColors.roseText,
+        style: TextStyle(
+          color: tokens.sectionHeaderText,
           fontWeight: FontWeight.w800,
           fontSize: 13,
           letterSpacing: 2.5,

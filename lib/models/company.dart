@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../theme/app_theme_id.dart';
+
 enum CompanyStatus { pending, active, suspended }
 
 extension CompanyStatusLabel on CompanyStatus {
@@ -22,6 +24,7 @@ class Company {
     this.status = CompanyStatus.pending,
     this.logoUrl,
     this.primaryColor,
+    this.themeId = 'classic',
     this.googleReviewUrl,
     this.createdAt,
     this.approvedAt,
@@ -37,6 +40,8 @@ class Company {
   final CompanyStatus status;
   final String? logoUrl;
   final String? primaryColor;
+  /// Curated theme id: classic | forest | sky.
+  final String themeId;
   /// Public Google review / Maps link shown as a QR for customers.
   final String? googleReviewUrl;
   final DateTime? createdAt;
@@ -57,6 +62,7 @@ class Company {
     String? logoUrl,
     String? primaryColor,
     bool clearPrimaryColor = false,
+    String? themeId,
     String? googleReviewUrl,
     bool clearGoogleReviewUrl = false,
     DateTime? createdAt,
@@ -74,6 +80,7 @@ class Company {
         logoUrl: logoUrl ?? this.logoUrl,
         primaryColor:
             clearPrimaryColor ? null : (primaryColor ?? this.primaryColor),
+        themeId: themeId ?? this.themeId,
         googleReviewUrl: clearGoogleReviewUrl
             ? null
             : (googleReviewUrl ?? this.googleReviewUrl),
@@ -89,6 +96,7 @@ class Company {
         'name': name,
         'companyCode': normalizeCode(companyCode),
         'status': status.firestoreValue,
+        'themeId': themeId,
         if (logoUrl != null) 'logoUrl': logoUrl,
         if (primaryColor != null) 'primaryColor': primaryColor,
         if (googleReviewUrl != null) 'googleReviewUrl': googleReviewUrl,
@@ -114,6 +122,7 @@ class Company {
           CompanyStatus.pending,
       logoUrl: data['logoUrl'] as String?,
       primaryColor: data['primaryColor'] as String?,
+      themeId: AppThemeIdX.parse(data['themeId'] as String?).firestoreValue,
       googleReviewUrl: (review == null || review.isEmpty) ? null : review,
       createdAt: ts is Timestamp ? ts.toDate() : null,
       approvedAt: ats is Timestamp ? ats.toDate() : null,

@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../services/store.dart';
 import '../theme.dart';
-import '../utils/brand_color.dart';
 import '../utils/ui_density.dart';
 import '../widgets/store_message.dart';
 
-/// Manager appearance settings — company brand color (accent-only).
+/// Manager appearance settings — density, themes, dark mode, review link.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -16,31 +14,18 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  static const _presets = <Color>[
-    Color(0xFF1B2A4A),
-    Color(0xFF2E7D52),
-    Color(0xFF1565C0),
-    Color(0xFFC62828),
-    Color(0xFF6A1B9A),
-  ];
-
-  Color _draft = AppColors.navy;
-  bool _busy = false;
+  bool _themeBusy = false;
   bool _reviewBusy = false;
-  final _hex = TextEditingController();
   final _reviewUrl = TextEditingController();
   UiDensity _density = UiDensity.comfortable;
   bool _densityBusy = false;
+  AppThemeId _themeId = AppThemeId.classic;
 
   @override
   void initState() {
     super.initState();
-    final existing =
-        parseBrandColor(Store.instance.activeCompany?.primaryColor);
-    if (existing != null) _draft = existing;
-    _hex.text = formatBrandColor(_draft);
-    _reviewUrl.text =
-        Store.instance.activeCompany?.googleReviewUrl ?? '';
+    _themeId = AppThemeIdX.parse(Store.instance.activeCompany?.themeId);
+    _reviewUrl.text = Store.instance.activeCompany?.googleReviewUrl ?? '';
     UiDensityPrefs.load().then((p) {
       if (!mounted) return;
       setState(() => _density = p.density);
@@ -58,22 +43,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showStoreMessage(context, 'Density saved on this device');
   }
 
+  Future<void> _setTheme(AppThemeId id) async {
+    setState(() {
+      _themeId = id;
+      _themeBusy = true;
+    });
+    final err = await Store.instance.updateCompanyThemeId(id.firestoreValue);
+    if (!mounted) return;
+    setState(() => _themeBusy = false);
+    if (err != null) {
+      setState(() {
+        _themeId = AppThemeIdX.parse(Store.instance.activeCompany?.themeId);
+      });
+    }
+    showStoreMessage(
+      context,
+      err ?? 'Theme saved for the company',
+      error: err != null,
+    );
+  }
+
   @override
   void dispose() {
-    _hex.dispose();
     _reviewUrl.dispose();
     super.dispose();
   }
 
   Future<void> _saveReviewUrl() async {
     setState(() => _reviewBusy = true);
-    final err = await Store.instance
-        .updateCompanyGoogleReviewUrl(_reviewUrl.text);
+    final err =
+        await Store.instance.updateCompanyGoogleReviewUrl(_reviewUrl.text);
     if (!mounted) return;
     setState(() => _reviewBusy = false);
     if (err == null) {
-      _reviewUrl.text =
-          Store.instance.activeCompany?.googleReviewUrl ?? '';
+      _reviewUrl.text = Store.instance.activeCompany?.googleReviewUrl ?? '';
     }
     showStoreMessage(
       context,
@@ -83,35 +86,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               : 'Review link saved'),
       error: err != null,
     );
-  }
-
-  void _setDraft(Color c) {
-    setState(() {
-      _draft = c;
-      _hex.text = formatBrandColor(c);
-    });
-  }
-
-  Future<void> _save() async {
-    setState(() => _busy = true);
-    final err = await Store.instance
-        .updateCompanyPrimaryColor(formatBrandColor(_draft));
-    if (!mounted) return;
-    setState(() => _busy = false);
-    showStoreMessage(
-      context,
-      err ?? 'Brand color saved',
-      error: err != null,
-    );
-  }
-
-  void _applyHexField() {
-    final parsed = parseBrandColor(_hex.text);
-    if (parsed == null) {
-      showStoreMessage(context, 'Enter a valid hex like #2E7D52', error: true);
-      return;
-    }
-    _setDraft(parsed);
   }
 
   @override
@@ -148,9 +122,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ],
                       selected: {_density},
-                      onSelectionChanged: _densityBusy
-                          ? null
-                          : (s) => _setDensity(s.first),
+                      onSelectionChanged:
+                          _densityBusy ? null : (s) => _setDensity(s.first),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              AppCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Dark mode', style: TextStyles.subheading),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'This device only. Uses the dark variant of the company theme.',
+                      style: TextStyles.caption,
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Use dark mode'),
+                      value: Store.instance.darkMode,
+                      onChanged: (v) => Store.instance.setDarkMode(v),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              AppCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Company theme', style: TextStyles.subheading),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Applies company-wide to Team, Sheet, Scorecard, and dashboard.',
+                      style: TextStyles.caption,
+                    ),
+                    const SizedBox(height: 14),
+                    SegmentedButton<AppThemeId>(
+                      segments: const [
+                        ButtonSegment(
+                          value: AppThemeId.classic,
+                          label: Text('Classic'),
+                        ),
+                        ButtonSegment(
+                          value: AppThemeId.forest,
+                          label: Text('Forest'),
+                        ),
+                        ButtonSegment(
+                          value: AppThemeId.sky,
+                          label: Text('Sky'),
+                        ),
+                      ],
+                      selected: {_themeId},
+                      onSelectionChanged:
+                          _themeBusy ? null : (s) => _setTheme(s.first),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        for (final id in AppThemeId.values) ...[
+                          Expanded(
+                            child: Container(
+                              height: 36,
+                              margin: EdgeInsets.only(
+                                right: id == AppThemeId.sky ? 0 : 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: primaryForTheme(id, dark: false),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _themeId == id
+                                      ? AppColors.textPrimary
+                                      : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -200,106 +254,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _saveReviewUrl();
                             },
                       child: const Text('Clear review link'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              AppCard(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('Brand color', style: TextStyles.subheading),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Applies company-wide to buttons, nav, and accents.',
-                      style: TextStyles.caption,
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        for (final c in _presets)
-                          GestureDetector(
-                            onTap: () => _setDraft(c),
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: c,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _draft.toARGB32() == c.toARGB32()
-                                      ? AppColors.textPrimary
-                                      : Colors.white,
-                                  width: 3,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x22000000),
-                                    blurRadius: 4,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _hex,
-                      textCapitalization: TextCapitalization.characters,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[0-9a-fA-F#]')),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Custom hex',
-                        hintText: '#2E7D52',
-                        isDense: true,
-                      ),
-                      onSubmitted: (_) => _applyHexField(),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: _applyHexField,
-                        child: const Text('Apply hex'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('Preview', style: TextStyles.caption),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _draft,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {},
-                      child: const Text('Primary button'),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _busy ? null : _save,
-                      child: _busy
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Save brand color'),
-                    ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _setDraft(AppColors.navy),
-                      child: const Text('Reset to default navy'),
                     ),
                   ],
                 ),
