@@ -5,6 +5,7 @@ import '../models/company.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../widgets/profile_menu.dart';
+import '../widgets/managers_section.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/store_message.dart';
 import 'manager_screen.dart';
@@ -305,6 +306,17 @@ class _CompanyCardState extends State<_CompanyCard> {
               ],
             ],
           ),
+          if (c.status == CompanyStatus.active ||
+              c.status == CompanyStatus.pending) ...[
+            const SizedBox(height: 12),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Managers', style: TextStyles.subheading),
+              children: [
+                ManagersSection(companyId: c.id),
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/worker.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../widgets/managers_section.dart';
 import '../widgets/store_message.dart';
 
 /// Manager screen: company code for employees plus roster and locations.
@@ -243,6 +244,10 @@ class _TeamScreenState extends State<TeamScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _CompanyCodeCard(code: code, companyName: company?.name),
+                  if (company != null) ...[
+                    const SizedBox(height: 16),
+                    ManagersSection(companyId: company.id),
+                  ],
                   if (locations.length > 1) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(

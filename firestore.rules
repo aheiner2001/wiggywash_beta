@@ -74,6 +74,16 @@ service cloud.firestore {
           allow write: if canManageCompany(companyId);
         }
       }
+
+      match /managerInvites/{inviteId} {
+        allow read: if canManageCompany(companyId) || isRealUser();
+        allow create, delete: if canManageCompany(companyId);
+        allow update: if canManageCompany(companyId)
+          || (isRealUser()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['claimedUid'])
+              && request.resource.data.claimedUid == request.auth.uid);
+      }
     }
 
     // ===== Wiggy Wash: location-scoped data (legacy — migration window) =====
@@ -137,7 +147,22 @@ service cloud.firestore {
     // into its own uid, so the two coexist.
     match /users/{uid} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if isPlatformAdmin()
+        || (request.auth != null
+            && request.auth.uid == uid
+            && (
+              !('role' in request.resource.data)
+              || !('role' in resource.data)
+              || request.resource.data.role == resource.data.role
+              || request.resource.data.role == null
+              || (
+                request.resource.data.role == 'companyManager'
+                && request.resource.data.companyId is string
+                && isRealUser()
+              )
+            ));
+      allow delete: if isPlatformAdmin();
     }
 
     // Friend links (QR scan creates these)

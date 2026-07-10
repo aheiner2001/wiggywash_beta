@@ -78,6 +78,8 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
                   final signedIn = appUser != null;
                   final showSignupForm =
                       _creating && signedIn && appUser.role == null;
+                  final showNotInvited =
+                      signedIn && appUser.role == null && !_creating;
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,6 +89,8 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
                       const SizedBox(height: 24),
                       if (showSignupForm)
                         _signupForm(appUser.email)
+                      else if (showNotInvited)
+                        _notInvited(appUser.email)
                       else if (_creating)
                         _createStep()
                       else
@@ -117,7 +121,8 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
           const Text('Manager sign in', style: TextStyles.subheading),
           const SizedBox(height: 6),
           const Text(
-            'Use the Google account on your manager profile.',
+            'Sign in with the Google account your company invited. '
+            'After your company is approved, you\'ll land on the Team Dashboard.',
             style: TextStyles.caption,
           ),
           const SizedBox(height: 18),
@@ -145,7 +150,8 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
           const Text('Create your company', style: TextStyles.subheading),
           const SizedBox(height: 6),
           const Text(
-            'Sign in with Google, then tell us about your car wash business.',
+            'New car wash? Continue with Google, submit your company for approval, '
+            'then wait for platform approval. You\'ll be the first manager.',
             style: TextStyles.caption,
           ),
           const SizedBox(height: 18),
@@ -159,6 +165,40 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
               child: const Text('I already have an account'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _notInvited(String email) {
+    final claimErr = Store.instance.managerClaimError;
+    return AppCard(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Not a manager yet', style: TextStyles.subheading),
+          const SizedBox(height: 8),
+          Text(
+            'This Google account isn’t a manager yet. Ask a company manager to add '
+            '$email under Managers, then sign in again.\n\n'
+            'Or choose Create a new company if you’re starting a new business.',
+            style: TextStyles.caption,
+          ),
+          if (claimErr != null) ...[
+            const SizedBox(height: 8),
+            Text(claimErr,
+                style: TextStyles.caption.copyWith(color: AppColors.danger)),
+          ],
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => setState(() => _creating = true),
+            child: const Text('Create a new company'),
+          ),
+          TextButton(
+            onPressed: () => Store.instance.signOutManager(),
+            child: const Text('Use a different Google account'),
+          ),
         ],
       ),
     );

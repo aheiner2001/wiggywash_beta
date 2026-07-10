@@ -13,11 +13,13 @@ import '../models/app_user.dart';
 import '../models/challenge.dart';
 import '../models/company.dart';
 import '../models/location.dart';
+import '../models/manager_invite.dart';
 import '../models/profile.dart';
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../models/worker.dart';
 import '../utils/brand_color.dart';
+import '../utils/manager_invite_logic.dart';
 import 'company_migration.dart' as company_migration;
 
 /// Where the app should send the user right now.
@@ -97,6 +99,7 @@ class Store extends ChangeNotifier {
   // Navigation flags driven by the user.
   bool _showManagerAuth = false;
   bool _pendingManagerCreate = false;
+  String? _managerClaimError;
 
   // A manager/super-admin temporarily using the employee scorecard under a
   // chosen name, without losing their account session.
@@ -156,6 +159,7 @@ class Store extends ChangeNotifier {
   List<Location> get locations => List.unmodifiable(_locations);
   String? get activeLocationId => _activeLocationId;
   bool get pendingManagerCreate => _pendingManagerCreate;
+  String? get managerClaimError => _managerClaimError;
 
   /// True when a signed-in manager/super-admin is filling out a scorecard.
   bool get isActingAsEmployee => _actingAsEmployee && _actingName != null;
@@ -267,6 +271,9 @@ class Store extends ChangeNotifier {
   }
   CollectionReference<Map<String, dynamic>> get _usersCol =>
       _db.collection(_kUsers);
+
+  CollectionReference<Map<String, dynamic>> _managerInvitesCol(String companyId) =>
+      _companiesCol.doc(companyId).collection('managerInvites');
   DocumentReference<Map<String, dynamic>>? get _locationRef =>
       _activeLocationId == null ? null : _locationsCol.doc(_activeLocationId);
 
@@ -379,6 +386,14 @@ class Store extends ChangeNotifier {
           'displayName': user.displayName ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         });
+        await tryClaimManagerInvite();
+      } else {
+        final data = snap.data();
+        final role =
+            data == null ? null : roleFromString(data['role'] as String?);
+        if (role == null) {
+          await tryClaimManagerInvite();
+        }
       }
     } catch (e) {
       debugPrint('ensure user doc error: $e');
@@ -499,6 +514,7 @@ class Store extends ChangeNotifier {
   Future<void> signOutManager() async {
     _showManagerAuth = false;
     _pendingManagerCreate = false;
+    _managerClaimError = null;
     _actingAsEmployee = false;
     _actingName = null;
     try {
@@ -646,6 +662,18 @@ class Store extends ChangeNotifier {
         },
         SetOptions(merge: true),
       );
+      batch.set(
+        companyRef.collection('managerInvites').doc(),
+        {
+          'email': ManagerInvite.normalizeEmail(user.email),
+          if (user.displayName.trim().isNotEmpty)
+            'displayName': user.displayName.trim(),
+          'invitedByUid': user.uid,
+          'invitedByEmail': ManagerInvite.normalizeEmail(user.email),
+          'claimedUid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+      );
       await batch.commit();
       _activeCompanyId = companyRef.id;
       _activeLocationId = locRef.id;
@@ -666,6 +694,173 @@ class Store extends ChangeNotifier {
     } catch (e) {
       debugPrint('createPendingCompany error: $e');
       return 'Could not create your company. Check your connection.';
+    }
+  }
+
+  Future<List<ManagerInvite>> listManagerInvites(String companyId) async {
+    try {
+      final snap = await _managerInvitesCol(companyId).orderBy('email').get();
+      return snap.docs
+          .map((d) =>
+              ManagerInvite.fromMap(d.id, d.data(), companyId: companyId))
+          .toList();
+    } catch (e) {
+      debugPrint('listManagerInvites error: $e');
+      return [];
+    }
+  }
+
+  Future<String?> addManagerInvite({
+    required String companyId,
+    required String email,
+    String? displayName,
+  }) async {
+    final normalized = ManagerInvite.normalizeEmail(email);
+    if (normalized.isEmpty || !normalized.contains('@')) {
+      return 'Enter a valid email address.';
+    }
+    final me = _appUser;
+    if (me == null) return 'Not signed in.';
+    try {
+      final existing = await _managerInvitesCol(companyId)
+          .where('email', isEqualTo: normalized)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) return 'That email is already invited.';
+      await _managerInvitesCol(companyId).add({
+        'email': normalized,
+        if (displayName != null && displayName.trim().isNotEmpty)
+          'displayName': displayName.trim(),
+        'invitedByUid': me.uid,
+        'invitedByEmail': me.email,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      debugPrint('addManagerInvite error: $e');
+      return 'Could not add manager.';
+    }
+  }
+
+  Future<String?> updateManagerInviteDisplayName({
+    required String companyId,
+    required String inviteId,
+    required String? displayName,
+  }) async {
+    try {
+      final trimmed = displayName?.trim() ?? '';
+      await _managerInvitesCol(companyId).doc(inviteId).set({
+        if (trimmed.isEmpty)
+          'displayName': FieldValue.delete()
+        else
+          'displayName': trimmed,
+      }, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('updateManagerInviteDisplayName error: $e');
+      return 'Could not update name.';
+    }
+  }
+
+  Future<String?> removeManagerInvite({
+    required String companyId,
+    required String inviteId,
+  }) async {
+    try {
+      final invites = await listManagerInvites(companyId);
+      if (!canRemoveManager(inviteCount: invites.length)) {
+        return 'Keep at least one manager.';
+      }
+      ManagerInvite? target;
+      for (final i in invites) {
+        if (i.id == inviteId) target = i;
+      }
+      if (target == null) return 'Invite not found.';
+      await _managerInvitesCol(companyId).doc(inviteId).delete();
+      final users = await _usersCol
+          .where('email', isEqualTo: target.email)
+          .where('companyId', isEqualTo: companyId)
+          .get();
+      for (final doc in users.docs) {
+        await doc.reference.set({
+          'role': FieldValue.delete(),
+          'companyId': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      }
+      return null;
+    } catch (e) {
+      debugPrint('removeManagerInvite error: $e');
+      return 'Could not remove manager.';
+    }
+  }
+
+  /// Claims a matching manager invite for the current Google user (no role yet).
+  Future<String?> tryClaimManagerInvite() async {
+    final user = _authUser;
+    if (user == null || user.isAnonymous) return null;
+    final email = ManagerInvite.normalizeEmail(user.email ?? '');
+    if (email.isEmpty) return null;
+    _managerClaimError = null;
+    try {
+      final snap = await _db
+          .collectionGroup('managerInvites')
+          .where('email', isEqualTo: email)
+          .get();
+      final eligible = <({DocumentReference<Map<String, dynamic>> ref,
+          ManagerInvite invite, Company company})>[];
+      for (final doc in snap.docs) {
+        final companyId = doc.reference.parent.parent?.id;
+        if (companyId == null) continue;
+        final companySnap = await _companiesCol.doc(companyId).get();
+        if (!companySnap.exists) continue;
+        final company = Company.fromDoc(companySnap);
+        final invite = ManagerInvite.fromMap(
+          doc.id,
+          doc.data(),
+          companyId: companyId,
+        );
+        if (isInviteEligible(
+          companyStatus: company.status,
+          companyCreatedByUid: company.createdByUid,
+          signedInUid: user.uid,
+        )) {
+          eligible.add((ref: doc.reference, invite: invite, company: company));
+        }
+      }
+      switch (pickClaimTarget(eligible.map((e) => e.company.id).toList())) {
+        case ClaimPick.none:
+          notifyListeners();
+          return null;
+        case ClaimPick.many:
+          _managerClaimError =
+              'Contact support — this email is invited to multiple companies.';
+          notifyListeners();
+          return _managerClaimError;
+        case ClaimPick.one:
+          final hit = eligible.first;
+          final locSnap = await _companiesCol
+              .doc(hit.company.id)
+              .collection('locations')
+              .limit(1)
+              .get();
+          final locationId =
+              locSnap.docs.isEmpty ? null : locSnap.docs.first.id;
+          await _usersCol.doc(user.uid).set({
+            'role': UserRole.companyManager.firestoreValue,
+            'companyId': hit.company.id,
+            'locationId': ?locationId,
+            'email': email,
+            'displayName': user.displayName ?? '',
+          }, SetOptions(merge: true));
+          await hit.ref.set({
+            'claimedUid': user.uid,
+          }, SetOptions(merge: true));
+          notifyListeners();
+          return null;
+      }
+    } catch (e) {
+      debugPrint('tryClaimManagerInvite error: $e');
+      return null;
     }
   }
 
