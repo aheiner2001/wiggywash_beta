@@ -49,14 +49,29 @@ service cloud.firestore {
       let loc = locationData(companyId, locationId);
       return !('accessStatus' in loc)
         || loc.accessStatus == 'active'
-        || loc.accessStatus == 'trial';
+        || loc.accessStatus == 'trial'
+        || loc.accessStatus == 'comp';
+    }
+    function companyBillingKeys() {
+      return ['purchasedSeats', 'stripeCustomerId', 'stripeSubscriptionId', 'billingStatus'];
+    }
+    function companyBillingUnchanged() {
+      return !request.resource.data.diff(resource.data)
+        .affectedKeys().hasAny(companyBillingKeys());
+    }
+    function locationCompChangeOk() {
+      let prev = resource.data.get('accessStatus', 'active');
+      let next = request.resource.data.get('accessStatus', prev);
+      let touchesComp = prev == 'comp' || next == 'comp';
+      return !touchesComp || isPlatformAdmin();
     }
 
     // ===== Wiggy Wash: company-scoped data =====
     match /companies/{companyId} {
       allow read: if signedIn();
       allow create: if isRealUser();
-      allow update: if canManageCompany(companyId) || isPlatformAdmin();
+      allow update: if isPlatformAdmin()
+        || (canManageCompany(companyId) && companyBillingUnchanged());
       allow delete: if isPlatformAdmin();
 
       match /locations/{locationId} {
@@ -64,7 +79,8 @@ service cloud.firestore {
         // Real users may create a location during self-service company signup
         // (role/companyId are written in the same batch; rules can't see them yet).
         allow create: if canManageCompany(companyId) || isRealUser();
-        allow update: if canManageCompany(companyId);
+        allow update: if (canManageCompany(companyId) || isPlatformAdmin())
+          && locationCompChangeOk();
         allow delete: if isPlatformAdmin();
 
         match /submissions/{doc} {
