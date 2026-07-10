@@ -1,8 +1,23 @@
+import 'package:intl/intl.dart';
+
 import '../models/staff_request.dart';
 
 const kStaffRequestMaxLen = 120;
 const kStaffRequestPresetCap = 20;
 const kStaffRequestDebounce = Duration(seconds: 2);
+
+final _staffRequestTime = DateFormat('h:mm a');
+
+String formatStaffRequestTime(DateTime? createdAt) {
+  if (createdAt == null) return '';
+  return _staffRequestTime.format(createdAt);
+}
+
+String employeeRequestCaption(StaffRequestStatus status, DateTime? createdAt) {
+  final time = formatStaffRequestTime(createdAt);
+  if (time.isEmpty) return status.employeeLabel;
+  return '${status.employeeLabel} · $time';
+}
 
 String staffRequestProfileKey(String name) => name.trim().toLowerCase();
 

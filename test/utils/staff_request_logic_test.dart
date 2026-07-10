@@ -43,4 +43,28 @@ void main() {
       isFalse,
     );
   });
+
+  test('formatStaffRequestTime empty when null', () {
+    expect(formatStaffRequestTime(null), '');
+  });
+
+  test('formatStaffRequestTime uses h:mm a', () {
+    final t = DateTime(2026, 7, 9, 15, 42);
+    expect(formatStaffRequestTime(t), '3:42 PM');
+  });
+
+  test('employeeRequestCaption status only when no time', () {
+    expect(
+      employeeRequestCaption(StaffRequestStatus.pending, null),
+      'Sent',
+    );
+  });
+
+  test('employeeRequestCaption status · time', () {
+    final t = DateTime(2026, 7, 9, 15, 42);
+    expect(
+      employeeRequestCaption(StaffRequestStatus.completed, t),
+      'Done · 3:42 PM',
+    );
+  });
 }
