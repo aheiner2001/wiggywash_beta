@@ -112,7 +112,9 @@ service cloud.firestore {
                       'completionPresetId',
                       'completionPresetLabel',
                       'completedAt',
-                      'completedByUid'
+                      'completedByUid',
+                      'revisionNote',
+                      'revisionRequestedAt'
                     ]));
 
           allow delete: if canManageCompany(companyId)

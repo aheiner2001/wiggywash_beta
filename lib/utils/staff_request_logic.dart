@@ -71,14 +71,28 @@ String? validateCompletionPayload({
   return null;
 }
 
-/// Manager-assigned (non-personal) first, then by dueAt ascending (nulls last),
-/// then createdAt descending.
+String? validateRevisionNote(String raw) {
+  final t = raw.trim();
+  if (t.isEmpty) return 'Add a short note for the employee.';
+  if (t.length > kStaffRequestMaxLen) {
+    return 'Keep it under $kStaffRequestMaxLen characters.';
+  }
+  return null;
+}
+
+/// Manager-assigned first (revision-requested before other manager items),
+/// then by dueAt ascending (nulls last), then createdAt descending.
 List<StaffRequest> sortEmployeeTodos(List<StaffRequest> items) {
   final copy = [...items];
   copy.sort((a, b) {
     final aMgr = !a.isPersonal;
     final bMgr = !b.isPersonal;
     if (aMgr != bMgr) return aMgr ? -1 : 1;
+    if (aMgr && bMgr) {
+      final aRev = a.hasRevisionRequest;
+      final bRev = b.hasRevisionRequest;
+      if (aRev != bRev) return aRev ? -1 : 1;
+    }
     final ad = a.dueAt;
     final bd = b.dueAt;
     if (ad != null && bd != null) {

@@ -6,6 +6,7 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../utils/staff_request_clear_prefs.dart';
 import '../utils/staff_request_logic.dart';
+import '../utils/staff_request_seen_prefs.dart';
 import '../widgets/store_message.dart';
 
 /// Employee: My to-do + presets/custom asks; track status.
@@ -21,6 +22,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _personal = TextEditingController();
   final _lastTapByPreset = <String, DateTime>{};
   final _clearedIds = <String>{};
+  final _seenIds = <String>{};
   bool _busy = false;
   bool _clearedLoaded = false;
 
@@ -28,6 +30,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   void initState() {
     super.initState();
     _loadCleared();
+    _loadSeenAndMark();
   }
 
   @override
@@ -52,6 +55,38 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         ..addAll(ids);
       _clearedLoaded = true;
     });
+  }
+
+  Future<void> _loadSeenAndMark() async {
+    final loc = Store.instance.activeLocationId ?? '';
+    final name = Store.instance.profile?.name ?? '';
+    final key = staffRequestProfileKey(name);
+    final seen = await StaffRequestSeenPrefs.load(
+      locationId: loc,
+      profileKey: key,
+    );
+    if (!mounted) return;
+    final assignedIds = Store.instance.staffRequests
+        .where(
+          (r) =>
+              r.status == StaffRequestStatus.assigned &&
+              !r.isPersonal &&
+              _assignedToMe(r, key),
+        )
+        .map((r) => r.id)
+        .toList();
+    setState(() {
+      _seenIds
+        ..clear()
+        ..addAll(seen);
+    });
+    if (assignedIds.isEmpty) return;
+    // Persist as seen for badge/next visit; keep session highlight via _seenIds.
+    await StaffRequestSeenPrefs.addIds(
+      locationId: loc,
+      profileKey: key,
+      ids: assignedIds,
+    );
   }
 
   Future<void> _clearFinished(List<StaffRequest> mine) async {
@@ -279,6 +314,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                             _TodoTile(
                               request: r,
                               busy: _busy,
+                              isNew: !r.isPersonal && !_seenIds.contains(r.id),
                               onComplete: r.isPersonal
                                   ? null
                                   : () => _openComplete(r),
@@ -514,12 +550,14 @@ class _TodoTile extends StatelessWidget {
   const _TodoTile({
     required this.request,
     required this.busy,
+    this.isNew = false,
     this.onComplete,
     this.onRemove,
   });
 
   final StaffRequest request;
   final bool busy;
+  final bool isNew;
   final VoidCallback? onComplete;
   final VoidCallback? onRemove;
 
@@ -527,8 +565,9 @@ class _TodoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final due = formatDueCaption(request.dueAt);
     final mgr = !request.isPersonal;
+    final rev = request.hasRevisionRequest;
     return Material(
-      color: Colors.white,
+      color: isNew ? const Color(0xFFFFF8E1) : Colors.white,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
@@ -543,6 +582,30 @@ class _TodoTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (rev)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Revision requested',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFC62828),
+                  ),
+                ),
+              )
+            else if (isNew)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'New assignment',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFEF6C00),
+                  ),
+                ),
+              ),
             Text(
               request.text,
               style: TextStyle(
@@ -554,6 +617,13 @@ class _TodoTile extends StatelessWidget {
             if (due.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(due, style: TextStyles.caption),
+            ],
+            if (rev && (request.revisionNote ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                request.revisionNote!.trim(),
+                style: TextStyles.caption,
+              ),
             ],
             const SizedBox(height: 10),
             Wrap(

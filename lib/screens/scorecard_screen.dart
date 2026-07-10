@@ -10,7 +10,10 @@ import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../utils/staff_request_logic.dart';
+import '../utils/staff_request_seen_prefs.dart';
 import '../utils/ui_density.dart';
+import '../models/staff_request.dart';
 import '../widgets/challenge_card.dart';
 import '../widgets/google_review_qr.dart';
 import '../widgets/profile_menu.dart';
@@ -49,6 +52,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   bool _hadDraft = false;
   Timer? _flashTimer;
   UiDensity _density = UiDensity.comfortable;
+  int _unseenAssignments = 0;
 
   /// Deterministic id so every Save during a shift updates the *same* running
   /// record for this employee on this day (instead of creating duplicates).
@@ -67,10 +71,32 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     _hadDraft = _restoreDraft();
     _seed();
     if (!_seeded) Store.instance.addListener(_seedWhenReady);
+    Store.instance.addListener(_refreshUnseenAssignments);
     UiDensityPrefs.load().then((p) {
       if (!mounted) return;
       setState(() => _density = p.density);
     });
+    _refreshUnseenAssignments();
+  }
+
+  Future<void> _refreshUnseenAssignments() async {
+    final loc = Store.instance.activeLocationId ?? '';
+    final key = staffRequestProfileKey(widget.profile.name);
+    final seen = await StaffRequestSeenPrefs.load(
+      locationId: loc,
+      profileKey: key,
+    );
+    final assigned = Store.instance.staffRequests.where((r) {
+      if (r.status != StaffRequestStatus.assigned || r.isPersonal) return false;
+      final aKey = r.assigneeProfileKey ?? '';
+      if (aKey.isNotEmpty) return aKey == key;
+      return r.employeeName.trim().toLowerCase() == key;
+    });
+    final n = assigned.where((r) => !seen.contains(r.id)).length;
+    if (!mounted) return;
+    if (n != _unseenAssignments) {
+      setState(() => _unseenAssignments = n);
+    }
   }
 
   bool _restoreDraft() {
@@ -148,6 +174,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   void dispose() {
     _flashTimer?.cancel();
     Store.instance.removeListener(_seedWhenReady);
+    Store.instance.removeListener(_refreshUnseenAssignments);
     _baGoal.dispose();
     super.dispose();
   }
@@ -292,12 +319,19 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
           ),
           IconButton(
             tooltip: 'Requests',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const EmployeeRequestsScreen(),
-              ),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EmployeeRequestsScreen(),
+                ),
+              );
+              if (mounted) _refreshUnseenAssignments();
+            },
+            icon: Badge(
+              isLabelVisible: _unseenAssignments > 0,
+              label: Text('$_unseenAssignments'),
+              child: const Icon(Icons.campaign_outlined),
             ),
-            icon: const Icon(Icons.campaign_outlined),
           ),
           const ProfileAction(),
         ],

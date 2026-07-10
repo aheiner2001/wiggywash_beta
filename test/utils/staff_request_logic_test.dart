@@ -156,6 +156,34 @@ void main() {
     expect(sorted.map((r) => r.id).toList(), ['m1', 'm2', 'p']);
   });
 
+  test('sortEmployeeTodos revision requested first', () {
+    final normal = StaffRequest(
+      id: 'n',
+      text: 'Normal',
+      employeeName: 'Alex',
+      source: StaffRequestSource.managerAssign,
+      status: StaffRequestStatus.assigned,
+      dueAt: DateTime(2026, 7, 10, 8),
+    );
+    final rev = StaffRequest(
+      id: 'r',
+      text: 'Revise',
+      employeeName: 'Alex',
+      source: StaffRequestSource.managerAssign,
+      status: StaffRequestStatus.assigned,
+      revisionNote: 'Do bay 3 again',
+      revisionRequestedAt: DateTime(2026, 7, 10, 12),
+      dueAt: DateTime(2026, 7, 10, 18),
+    );
+    final sorted = sortEmployeeTodos([normal, rev]);
+    expect(sorted.map((r) => r.id).toList(), ['r', 'n']);
+  });
+
+  test('validateRevisionNote requires text', () {
+    expect(validateRevisionNote(''), isNotNull);
+    expect(validateRevisionNote('Fix bay 3'), isNull);
+  });
+
   test('formatDueCaption empty when null', () {
     expect(formatDueCaption(null, now: DateTime(2026, 7, 9, 12)), '');
   });

@@ -227,6 +227,7 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
               .where(
                 (r) =>
                     r.status == StaffRequestStatus.accepted ||
+                    r.status == StaffRequestStatus.assigned ||
                     r.status == StaffRequestStatus.awaitingReview,
               )
               .toList();
@@ -281,7 +282,7 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
                         Expanded(
                           child: _BoardColumn(
                             title: 'To-do',
-                            subtitle: 'Accepted — finish these',
+                            subtitle: 'Pending with staff · review completions',
                             count: todos.length,
                             child: todos.isEmpty
                                 ? const _EmptyPanel(
@@ -332,7 +333,7 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
                     const SizedBox(height: 20),
                     _BoardColumn(
                       title: 'To-do',
-                      subtitle: 'Accepted — finish these',
+                      subtitle: 'Pending with staff · review completions',
                       count: todos.length,
                       child: todos.isEmpty
                           ? const _EmptyPanel(
@@ -419,6 +420,16 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
         FilledButton(
           onPressed: _busy ? null : () => _openReview(r),
           child: const Text('Review'),
+        ),
+      ];
+    }
+    if (r.status == StaffRequestStatus.assigned) {
+      return [
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => _run(() => Store.instance.dismissStaffRequest(r.id)),
+          child: const Text('Delete'),
         ),
       ];
     }
@@ -536,8 +547,8 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
         content: Text(body.isEmpty ? '(No note)' : body),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'reopen'),
-            child: const Text('Reopen'),
+            onPressed: () => Navigator.pop(ctx, 'sendback'),
+            child: const Text('Send back…'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, 'close'),
@@ -549,12 +560,45 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
     if (action == null || !mounted) return;
     if (action == 'close') {
       await _run(() => Store.instance.closeStaffRequest(r.id), ok: 'Closed');
-    } else if (action == 'reopen') {
-      await _run(
-        () => Store.instance.reopenStaffRequest(r.id),
-        ok: 'Reopened',
-      );
+      return;
     }
+    if (action != 'sendback') return;
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Send back'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          maxLength: kStaffRequestMaxLen,
+          decoration: const InputDecoration(
+            labelText: 'What should they fix?',
+            hintText: 'Wipe bay 3 again',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send back'),
+          ),
+        ],
+      ),
+    );
+    final revision = c.text;
+    c.dispose();
+    if (ok != true || !mounted) return;
+    await _run(
+      () => Store.instance.sendBackStaffRequest(
+        id: r.id,
+        revisionNote: revision,
+      ),
+      ok: 'Sent back',
+    );
   }
 
   Future<void> _openAssignTaskDialog() async {
@@ -917,6 +961,18 @@ class _RequestTile extends StatelessWidget {
                     color: Color(0xFFC62828),
                   ),
                 ),
+              )
+            else if (request.status == StaffRequestStatus.assigned)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Pending',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textMuted,
+                  ),
+                ),
               ),
             Text(
               request.text,
@@ -928,7 +984,9 @@ class _RequestTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '$who${when.isEmpty ? '' : ' · $when'}',
+              request.status == StaffRequestStatus.assigned
+                  ? 'Assigned to $who${when.isEmpty ? '' : ' · $when'}'
+                  : '$who${when.isEmpty ? '' : ' · $when'}',
               style: TextStyles.caption,
             ),
             if (due.isNotEmpty) ...[

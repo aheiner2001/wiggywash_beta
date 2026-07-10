@@ -1259,6 +1259,37 @@ class Store extends ChangeNotifier {
   Future<String?> reopenStaffRequest(String id) =>
       _transitionStaffRequest(id, StaffRequestStatus.assigned);
 
+  Future<String?> sendBackStaffRequest({
+    required String id,
+    required String revisionNote,
+  }) async {
+    final noteErr = validateRevisionNote(revisionNote);
+    if (noteErr != null) return noteErr;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    StaffRequest? current;
+    for (final r in _staffRequests) {
+      if (r.id == id) current = r;
+    }
+    if (current == null) return 'Request not found.';
+    if (!canTransition(current.status, StaffRequestStatus.assigned)) {
+      return 'That status change is not allowed.';
+    }
+    try {
+      await loc.collection('staffRequests').doc(id).set({
+        'status': StaffRequestStatus.assigned.firestoreValue,
+        'revisionNote': revisionNote.trim(),
+        'revisionRequestedAt': FieldValue.serverTimestamp(),
+        'reviewedAt': FieldValue.delete(),
+        'reviewedByUid': FieldValue.delete(),
+      }, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('sendBackStaffRequest error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not send back.');
+    }
+  }
+
   Future<String?> assignStaffRequest({
     required String id,
     required String assigneeName,
@@ -1416,6 +1447,8 @@ class Store extends ChangeNotifier {
           'completionPresetLabel': completionPresetLabel.trim(),
         'completedAt': FieldValue.serverTimestamp(),
         if (uid != null) 'completedByUid': uid,
+        'revisionNote': FieldValue.delete(),
+        'revisionRequestedAt': FieldValue.delete(),
       }, SetOptions(merge: true));
       return null;
     } catch (e) {

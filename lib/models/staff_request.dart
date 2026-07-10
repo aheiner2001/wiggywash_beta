@@ -77,6 +77,8 @@ class StaffRequest {
     this.completionNote,
     this.completionPresetId,
     this.completionPresetLabel,
+    this.revisionNote,
+    this.revisionRequestedAt,
     this.reviewedAt,
     this.reviewedByUid,
     this.createdAt,
@@ -102,6 +104,8 @@ class StaffRequest {
   final String? completionNote;
   final String? completionPresetId;
   final String? completionPresetLabel;
+  final String? revisionNote;
+  final DateTime? revisionRequestedAt;
   final DateTime? reviewedAt;
   final String? reviewedByUid;
   final DateTime? createdAt;
@@ -112,6 +116,10 @@ class StaffRequest {
   final DateTime? dismissedAt;
 
   bool get isPersonal => source == StaffRequestSource.employeePersonal;
+
+  bool get hasRevisionRequest =>
+      revisionRequestedAt != null ||
+      (revisionNote != null && revisionNote!.trim().isNotEmpty);
 
   Map<String, dynamic> toMap() => {
         'text': text.trim(),
@@ -132,6 +140,9 @@ class StaffRequest {
           'completionPresetId': completionPresetId,
         if (completionPresetLabel != null)
           'completionPresetLabel': completionPresetLabel,
+        if (revisionNote != null) 'revisionNote': revisionNote,
+        if (revisionRequestedAt != null)
+          'revisionRequestedAt': Timestamp.fromDate(revisionRequestedAt!),
         if (reviewedAt != null) 'reviewedAt': Timestamp.fromDate(reviewedAt!),
         if (reviewedByUid != null) 'reviewedByUid': reviewedByUid,
         'createdAt': createdAt != null
@@ -164,6 +175,8 @@ class StaffRequest {
       completionNote: data['completionNote'] as String?,
       completionPresetId: data['completionPresetId'] as String?,
       completionPresetLabel: data['completionPresetLabel'] as String?,
+      revisionNote: data['revisionNote'] as String?,
+      revisionRequestedAt: asDate(data['revisionRequestedAt']),
       reviewedAt: asDate(data['reviewedAt']),
       reviewedByUid: data['reviewedByUid'] as String?,
       createdAt: asDate(data['createdAt']),
