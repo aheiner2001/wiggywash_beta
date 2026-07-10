@@ -476,7 +476,22 @@ class _PeopleCardsGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
-        final cross = w >= 900 ? 4 : (w >= 600 ? 3 : 2);
+        // Phones: one full-width card (fixed 2-col + aspect ratio clipped tallies).
+        if (w < 600) {
+          return Column(
+            children: [
+              for (final e in entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: MiniScorecardCard(
+                    name: e.key,
+                    submissions: e.value,
+                  ),
+                ),
+            ],
+          );
+        }
+        final cross = w >= 900 ? 4 : 3;
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -485,7 +500,7 @@ class _PeopleCardsGrid extends StatelessWidget {
             crossAxisCount: cross,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: cross >= 3 ? 0.72 : 0.78,
+            childAspectRatio: cross >= 4 ? 0.72 : 0.78,
           ),
           itemBuilder: (context, i) {
             final e = entries[i];

@@ -91,14 +91,45 @@ class _ManagerShellState extends State<ManagerShell> {
         }
         return Scaffold(
           body: animatedBody,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _index,
-            onDestinationSelected: (i) => setState(() => _index = i),
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            destinations: [
-              for (final d in _destinations)
-                NavigationDestination(icon: Icon(d.icon), label: d.label),
-            ],
+          bottomNavigationBar: NavigationBarTheme(
+            data: NavigationBarThemeData(
+              height: 68,
+              labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                final selected = states.contains(WidgetState.selected);
+                return TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                  height: 1.1,
+                );
+              }),
+            ),
+            child: NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: (i) => setState(() => _index = i),
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_rounded),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.table_chart_outlined),
+                  label: 'Sheet',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.group_outlined),
+                  label: 'Team',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.sell_outlined),
+                  label: 'Prices',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  label: 'Settings',
+                ),
+              ],
+            ),
           ),
         );
       },
