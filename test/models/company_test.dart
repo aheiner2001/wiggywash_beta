@@ -77,4 +77,19 @@ void main() {
     });
     expect(c.purchasedSeats, 12);
   });
+
+  test('parses stripe ids and billingStatus', () {
+    final c = Company.fromMap('abc', {
+      'name': 'Wiggy',
+      'companyCode': 'WIGGY',
+      'status': 'active',
+      'purchasedSeats': 10,
+      'stripeCustomerId': 'cus_x',
+      'stripeSubscriptionId': 'sub_y',
+      'billingStatus': 'ok',
+    });
+    expect(c.stripeCustomerId, 'cus_x');
+    expect(c.stripeSubscriptionId, 'sub_y');
+    expect(c.billingStatus, 'ok');
+  });
 }

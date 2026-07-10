@@ -28,6 +28,8 @@ class Company {
     this.googleReviewUrl,
     this.purchasedSeats = 1,
     this.billingStatus,
+    this.stripeCustomerId,
+    this.stripeSubscriptionId,
     this.createdAt,
     this.approvedAt,
     this.approvedBy,
@@ -48,8 +50,10 @@ class Company {
   final String? googleReviewUrl;
   /// Paid location seats for this company (v1 manual / admin).
   final int purchasedSeats;
-  /// Optional display: ok | past_due | trialing
+  /// Optional display: ok | past_due | trialing | canceled
   final String? billingStatus;
+  final String? stripeCustomerId;
+  final String? stripeSubscriptionId;
   final DateTime? createdAt;
   final DateTime? approvedAt;
   final String? approvedBy;
@@ -81,6 +85,10 @@ class Company {
     int? purchasedSeats,
     String? billingStatus,
     bool clearBillingStatus = false,
+    String? stripeCustomerId,
+    bool clearStripeCustomerId = false,
+    String? stripeSubscriptionId,
+    bool clearStripeSubscriptionId = false,
     DateTime? createdAt,
     DateTime? approvedAt,
     String? approvedBy,
@@ -104,6 +112,12 @@ class Company {
         billingStatus: clearBillingStatus
             ? null
             : (billingStatus ?? this.billingStatus),
+        stripeCustomerId: clearStripeCustomerId
+            ? null
+            : (stripeCustomerId ?? this.stripeCustomerId),
+        stripeSubscriptionId: clearStripeSubscriptionId
+            ? null
+            : (stripeSubscriptionId ?? this.stripeSubscriptionId),
         createdAt: createdAt ?? this.createdAt,
         approvedAt: approvedAt ?? this.approvedAt,
         approvedBy: approvedBy ?? this.approvedBy,
@@ -122,6 +136,9 @@ class Company {
         if (primaryColor != null) 'primaryColor': primaryColor,
         if (googleReviewUrl != null) 'googleReviewUrl': googleReviewUrl,
         if (billingStatus != null) 'billingStatus': billingStatus,
+        if (stripeCustomerId != null) 'stripeCustomerId': stripeCustomerId,
+        if (stripeSubscriptionId != null)
+          'stripeSubscriptionId': stripeSubscriptionId,
         'createdAt': createdAt != null
             ? Timestamp.fromDate(createdAt!)
             : FieldValue.serverTimestamp(),
@@ -137,6 +154,8 @@ class Company {
     final ats = data['approvedAt'];
     final review = (data['googleReviewUrl'] as String?)?.trim();
     final billing = (data['billingStatus'] as String?)?.trim();
+    final stripeCustomer = (data['stripeCustomerId'] as String?)?.trim();
+    final stripeSub = (data['stripeSubscriptionId'] as String?)?.trim();
     return Company(
       id: id,
       name: data['name'] as String? ?? id,
@@ -149,6 +168,10 @@ class Company {
       googleReviewUrl: (review == null || review.isEmpty) ? null : review,
       purchasedSeats: _parseSeats(data['purchasedSeats']),
       billingStatus: (billing == null || billing.isEmpty) ? null : billing,
+      stripeCustomerId:
+          (stripeCustomer == null || stripeCustomer.isEmpty) ? null : stripeCustomer,
+      stripeSubscriptionId:
+          (stripeSub == null || stripeSub.isEmpty) ? null : stripeSub,
       createdAt: ts is Timestamp ? ts.toDate() : null,
       approvedAt: ats is Timestamp ? ats.toDate() : null,
       approvedBy: data['approvedBy'] as String?,
