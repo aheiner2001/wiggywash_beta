@@ -1,7 +1,7 @@
 # Sticky Login + Per-Location Billing — Design Spec
 
 **Date:** 2026-07-10  
-**Status:** Draft — awaiting your review of this file  
+**Status:** Approved  
 **Surface:** Flutter **web** (GitHub Pages); employee session is browser-local (SharedPreferences → local storage)  
 
 ## Summary
