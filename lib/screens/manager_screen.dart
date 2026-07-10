@@ -10,6 +10,7 @@ import '../utils/csv.dart';
 import '../utils/exporter.dart';
 import '../utils/ui_density.dart';
 import '../widgets/challenge_card.dart';
+import '../widgets/google_review_qr.dart';
 import '../widgets/mini_scorecard_card.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
@@ -301,6 +302,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
             ),
             icon: const Icon(Icons.info_outline_rounded),
           ),
+          const GoogleReviewQrButton(),
           IconButton(
             tooltip: 'Fill out a scorecard',
             onPressed: _useScorecard,

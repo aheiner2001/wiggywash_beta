@@ -26,7 +26,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Color _draft = AppColors.navy;
   bool _busy = false;
+  bool _reviewBusy = false;
   final _hex = TextEditingController();
+  final _reviewUrl = TextEditingController();
   UiDensity _density = UiDensity.comfortable;
   bool _densityBusy = false;
 
@@ -37,6 +39,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         parseBrandColor(Store.instance.activeCompany?.primaryColor);
     if (existing != null) _draft = existing;
     _hex.text = formatBrandColor(_draft);
+    _reviewUrl.text =
+        Store.instance.activeCompany?.googleReviewUrl ?? '';
     UiDensityPrefs.load().then((p) {
       if (!mounted) return;
       setState(() => _density = p.density);
@@ -57,7 +61,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _hex.dispose();
+    _reviewUrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveReviewUrl() async {
+    setState(() => _reviewBusy = true);
+    final err = await Store.instance
+        .updateCompanyGoogleReviewUrl(_reviewUrl.text);
+    if (!mounted) return;
+    setState(() => _reviewBusy = false);
+    if (err == null) {
+      _reviewUrl.text =
+          Store.instance.activeCompany?.googleReviewUrl ?? '';
+    }
+    showStoreMessage(
+      context,
+      err ??
+          (_reviewUrl.text.trim().isEmpty
+              ? 'Review link cleared'
+              : 'Review link saved'),
+      error: err != null,
+    );
   }
 
   void _setDraft(Color c) {
@@ -126,6 +151,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onSelectionChanged: _densityBusy
                           ? null
                           : (s) => _setDensity(s.first),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              AppCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Google review link',
+                        style: TextStyles.subheading),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Paste your Google review or Maps link. Staff can open a QR from the scorecard and dashboard for customers to scan.',
+                      style: TextStyles.caption,
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _reviewUrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Review URL',
+                        hintText: 'https://g.page/r/...',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _reviewBusy ? null : _saveReviewUrl,
+                      child: _reviewBusy
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Save review link'),
+                    ),
+                    TextButton(
+                      onPressed: _reviewBusy
+                          ? null
+                          : () {
+                              _reviewUrl.clear();
+                              _saveReviewUrl();
+                            },
+                      child: const Text('Clear review link'),
                     ),
                   ],
                 ),

@@ -930,6 +930,51 @@ class Store extends ChangeNotifier {
     }
   }
 
+  /// Saves or clears the company Google review URL used for the QR dialog.
+  Future<String?> updateCompanyGoogleReviewUrl(String? raw) async {
+    final id = _activeCompanyId;
+    if (id == null) return 'No active company.';
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      try {
+        await _companiesCol.doc(id).set(
+          {'googleReviewUrl': FieldValue.delete()},
+          SetOptions(merge: true),
+        );
+        if (_activeCompany != null) {
+          _activeCompany =
+              _activeCompany!.copyWith(clearGoogleReviewUrl: true);
+        }
+        notifyListeners();
+        return null;
+      } catch (e) {
+        debugPrint('updateCompanyGoogleReviewUrl clear error: $e');
+        return 'Could not clear review link.';
+      }
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return 'Enter a full https:// link from Google.';
+    }
+    try {
+      await _companiesCol.doc(id).set(
+        {'googleReviewUrl': trimmed},
+        SetOptions(merge: true),
+      );
+      if (_activeCompany != null) {
+        _activeCompany =
+            _activeCompany!.copyWith(googleReviewUrl: trimmed);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('updateCompanyGoogleReviewUrl error: $e');
+      return 'Could not save review link.';
+    }
+  }
+
   Future<String?> approveCompany(String companyId) async {
     final admin = _appUser;
     if (admin?.role != UserRole.platformAdmin) return 'Not authorized.';

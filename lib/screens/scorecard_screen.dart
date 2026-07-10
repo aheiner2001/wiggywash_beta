@@ -12,6 +12,7 @@ import '../services/store.dart';
 import '../theme.dart';
 import '../utils/ui_density.dart';
 import '../widgets/challenge_card.dart';
+import '../widgets/google_review_qr.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
@@ -282,6 +283,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
             ),
             icon: const Icon(Icons.info_outline_rounded),
           ),
+          const GoogleReviewQrButton(),
           IconButton(
             tooltip: 'Clear scorecard',
             onPressed: _hasAnyTally ? _resetCard : null,

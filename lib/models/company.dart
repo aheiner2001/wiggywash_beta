@@ -22,6 +22,7 @@ class Company {
     this.status = CompanyStatus.pending,
     this.logoUrl,
     this.primaryColor,
+    this.googleReviewUrl,
     this.createdAt,
     this.approvedAt,
     this.approvedBy,
@@ -36,6 +37,8 @@ class Company {
   final CompanyStatus status;
   final String? logoUrl;
   final String? primaryColor;
+  /// Public Google review / Maps link shown as a QR for customers.
+  final String? googleReviewUrl;
   final DateTime? createdAt;
   final DateTime? approvedAt;
   final String? approvedBy;
@@ -54,6 +57,8 @@ class Company {
     String? logoUrl,
     String? primaryColor,
     bool clearPrimaryColor = false,
+    String? googleReviewUrl,
+    bool clearGoogleReviewUrl = false,
     DateTime? createdAt,
     DateTime? approvedAt,
     String? approvedBy,
@@ -69,6 +74,9 @@ class Company {
         logoUrl: logoUrl ?? this.logoUrl,
         primaryColor:
             clearPrimaryColor ? null : (primaryColor ?? this.primaryColor),
+        googleReviewUrl: clearGoogleReviewUrl
+            ? null
+            : (googleReviewUrl ?? this.googleReviewUrl),
         createdAt: createdAt ?? this.createdAt,
         approvedAt: approvedAt ?? this.approvedAt,
         approvedBy: approvedBy ?? this.approvedBy,
@@ -83,6 +91,7 @@ class Company {
         'status': status.firestoreValue,
         if (logoUrl != null) 'logoUrl': logoUrl,
         if (primaryColor != null) 'primaryColor': primaryColor,
+        if (googleReviewUrl != null) 'googleReviewUrl': googleReviewUrl,
         'createdAt': createdAt != null
             ? Timestamp.fromDate(createdAt!)
             : FieldValue.serverTimestamp(),
@@ -96,6 +105,7 @@ class Company {
   factory Company.fromMap(String id, Map<String, dynamic> data) {
     final ts = data['createdAt'];
     final ats = data['approvedAt'];
+    final review = (data['googleReviewUrl'] as String?)?.trim();
     return Company(
       id: id,
       name: data['name'] as String? ?? id,
@@ -104,6 +114,7 @@ class Company {
           CompanyStatus.pending,
       logoUrl: data['logoUrl'] as String?,
       primaryColor: data['primaryColor'] as String?,
+      googleReviewUrl: (review == null || review.isEmpty) ? null : review,
       createdAt: ts is Timestamp ? ts.toDate() : null,
       approvedAt: ats is Timestamp ? ats.toDate() : null,
       approvedBy: data['approvedBy'] as String?,
