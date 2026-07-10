@@ -7,7 +7,7 @@ import '../theme.dart';
 import '../utils/location_entitlement.dart' as entitlement;
 import '../widgets/store_message.dart';
 
-/// Manager view of per-location seats (Stripe self-serve comes later).
+/// Manager view of per-location seats (Stripe self-serve comes in Phase B).
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
 
@@ -51,6 +51,10 @@ class _BillingScreenState extends State<BillingScreen> {
               ),
             ),
           );
+          final over = entitlement.isOverAllocated(
+            purchasedSeats: purchased,
+            seatsUsed: used,
+          );
           return Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
@@ -73,12 +77,22 @@ class _BillingScreenState extends State<BillingScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Self-serve billing (Stripe) is coming later. Ask a platform admin to add seats. You can choose which sites use a seat.',
+                          'Choose which sites use a paid seat. Ask a platform admin to add seats, or use Stripe self-serve when it is enabled.',
                           style: TextStyles.caption,
                         ),
                       ],
                     ),
                   ),
+                  if (over) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Over allocated: $used active sites but only $purchased seats. Move extras to read-only or buy seats.',
+                      style: const TextStyle(
+                        color: AppColors.warning,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   for (final loc in locs) ...[
                     AppCard(
@@ -88,30 +102,53 @@ class _BillingScreenState extends State<BillingScreen> {
                         children: [
                           Text(loc.displayName, style: TextStyles.subheading),
                           const SizedBox(height: 10),
-                          SegmentedButton<LocationAccessStatus>(
-                            segments: const [
-                              ButtonSegment(
-                                value: LocationAccessStatus.active,
-                                label: Text('Active'),
-                              ),
-                              ButtonSegment(
-                                value: LocationAccessStatus.trial,
-                                label: Text('Trial'),
-                              ),
-                              ButtonSegment(
-                                value: LocationAccessStatus.readOnly,
-                                label: Text('Read-only'),
-                              ),
-                            ],
-                            selected: {
-                              entitlement.effectiveAccess(
+                          Builder(
+                            builder: (context) {
+                              final effective = entitlement.effectiveAccess(
                                 loc.accessStatus,
                                 trialEndsAt: loc.trialEndsAt,
-                              ),
+                              );
+                              final isComp =
+                                  effective == LocationAccessStatus.comp;
+                              if (isComp) {
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Chip(
+                                      label: Text(
+                                        LocationAccessStatus.comp.label,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Comp site — full access, no seat. Only platform admin can change.',
+                                      style: TextStyles.caption,
+                                    ),
+                                  ],
+                                );
+                              }
+                              return SegmentedButton<LocationAccessStatus>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: LocationAccessStatus.active,
+                                    label: Text('Active'),
+                                  ),
+                                  ButtonSegment(
+                                    value: LocationAccessStatus.trial,
+                                    label: Text('Trial'),
+                                  ),
+                                  ButtonSegment(
+                                    value: LocationAccessStatus.readOnly,
+                                    label: Text('Read-only'),
+                                  ),
+                                ],
+                                selected: {effective},
+                                onSelectionChanged: _busy
+                                    ? null
+                                    : (s) => _setAccess(loc, s.first),
+                              );
                             },
-                            onSelectionChanged: _busy
-                                ? null
-                                : (s) => _setAccess(loc, s.first),
                           ),
                         ],
                       ),
