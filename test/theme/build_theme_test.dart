@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:wiggywash/theme.dart';
-import 'package:wiggywash/theme/app_theme_id.dart';
-import 'package:wiggywash/theme/wiggy_tokens.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
