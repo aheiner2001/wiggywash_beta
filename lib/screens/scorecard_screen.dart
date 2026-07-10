@@ -5,16 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/profile.dart';
 import '../models/scorecard_config.dart';
+import '../models/staff_request.dart';
 import '../models/submission.dart';
+import '../models/worker.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../utils/staff_request_logic.dart';
 import '../utils/staff_request_seen_prefs.dart';
 import '../utils/ui_density.dart';
-import '../models/staff_request.dart';
 import '../widgets/challenge_card.dart';
+import '../widgets/employee_session_menu.dart';
 import '../widgets/google_review_qr.dart';
 import '../widgets/profile_menu.dart';
+import '../widgets/read_only_banner.dart';
 import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
 import '../widgets/ui_kit.dart';
@@ -74,6 +77,62 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     Store.instance.addListener(_refreshUnseenAssignments);
     UiDensityController.instance.addListener(_onDensityChanged);
     _refreshUnseenAssignments();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePromptPin());
+  }
+
+  Future<void> _maybePromptPin() async {
+    if (!mounted) return;
+    if (Store.instance.pinUnlockedThisLaunch) return;
+    Worker? worker;
+    for (final w in Store.instance.workers) {
+      if (w.name.trim().toLowerCase() ==
+          widget.profile.name.trim().toLowerCase()) {
+        worker = w;
+        break;
+      }
+    }
+    if (worker == null || !worker.requiresPin) {
+      Store.instance.unlockPinForLaunch();
+      return;
+    }
+    final pin = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Entry code'),
+        content: TextField(
+          controller: pin,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Entry code'),
+          onSubmitted: (_) {
+            if (worker!.verifyPin(pin.text)) Navigator.of(ctx).pop(true);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Store.instance.signOutEmployee();
+              if (ctx.mounted) Navigator.of(ctx).pop(false);
+            },
+            child: const Text('Sign out'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (worker!.verifyPin(pin.text)) {
+                Navigator.of(ctx).pop(true);
+              } else {
+                showStoreMessage(ctx, 'Incorrect entry code', error: true);
+              }
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    pin.dispose();
+    if (ok == true) Store.instance.unlockPinForLaunch();
   }
 
   void _onDensityChanged() {
@@ -238,6 +297,11 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
 
   Future<void> _save() async {
     if (_saving || !_dirty) return;
+    if (!Store.instance.canWriteAtActiveLocation) {
+      if (!mounted) return;
+      showStoreMessage(context, Store.instance.readOnlyMessage, error: true);
+      return;
+    }
     setState(() => _saving = true);
     final goal = double.tryParse(_baGoal.text.trim()) ?? 0;
     final submission = Submission(
@@ -330,18 +394,24 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
               child: const Icon(Icons.campaign_outlined),
             ),
           ),
+          const EmployeeSessionMenu(),
           const ProfileAction(),
         ],
       ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: AnimatedBuilder(
-              animation: Store.instance,
-              builder: (context, _) {
-                return ListView(
-                  padding: EdgeInsets.fromLTRB(
+      body: Column(
+        children: [
+          const ReadOnlyBanner(),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: AnimatedBuilder(
+                    animation: Store.instance,
+                    builder: (context, _) {
+                      return ListView(
+                        padding: EdgeInsets.fromLTRB(
                     _density.pagePadding,
                     _density.pagePadding,
                     _density.pagePadding,
@@ -391,6 +461,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
           ),
         ),
       ),
+          ),
+        ],
+      ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
         child: DecoratedBox(
@@ -415,7 +488,11 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: (_dirty && !_saving) ? _save : null,
+                    onPressed: (_dirty &&
+                            !_saving &&
+                            Store.instance.canWriteAtActiveLocation)
+                        ? _save
+                        : null,
                     icon: _saving
                         ? const SizedBox(
                             height: 18,
