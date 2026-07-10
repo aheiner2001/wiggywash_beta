@@ -209,7 +209,7 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
 
           return LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 900;
+              final wide = constraints.maxWidth >= 720;
               return ListView(
                 padding: EdgeInsets.fromLTRB(
                   wide ? 28 : 16,
