@@ -86,9 +86,9 @@ const _employeeTips = [
     Icons.fact_check_outlined,
   ),
   _Tip(
-    'Your total today',
-    'Tap Your total today at the top of the scorecard to see a line-by-line breakdown.',
-    Icons.touch_app_outlined,
+    'Save as you go',
+    'Tap Save during your shift so totals stay on the sticky bar and in the database. Submit Shift when you are finished.',
+    Icons.save_outlined,
   ),
   _Tip(
     'Sharing a device',
