@@ -14,11 +14,15 @@ void main() {
         const Color(0xFF1B2A4A));
   });
 
-  test('classic dark uses dark scaffold', () {
-    expect(scaffoldForTheme(AppThemeId.classic, dark: true),
-        const Color(0xFF121820));
-    expect(primaryForTheme(AppThemeId.classic, dark: true),
-        const Color(0xFF8FC4E8));
+  test('dark flag is ignored — always light scaffold', () {
+    expect(
+      scaffoldForTheme(AppThemeId.classic, dark: true),
+      scaffoldForTheme(AppThemeId.classic, dark: false),
+    );
+    expect(
+      primaryForTheme(AppThemeId.classic, dark: true),
+      primaryForTheme(AppThemeId.classic, dark: false),
+    );
   });
 
   test('forest primary differs from classic', () {

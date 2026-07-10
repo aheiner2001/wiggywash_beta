@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../screens/billing_screen.dart';
 import '../screens/manager_screen.dart';
 import '../screens/manager_requests_screen.dart';
 import '../screens/master_sheet_screen.dart';
@@ -25,6 +26,7 @@ class _ManagerShellState extends State<ManagerShell> {
     (icon: Icons.campaign_outlined, label: 'Requests'),
     (icon: Icons.group_outlined, label: 'Team'),
     (icon: Icons.sell_outlined, label: 'Prices'),
+    (icon: Icons.payments_outlined, label: 'Billing'),
     (icon: Icons.settings_outlined, label: 'Settings'),
   ];
 
@@ -34,6 +36,7 @@ class _ManagerShellState extends State<ManagerShell> {
     'Requests',
     'Team',
     'Prices',
+    'Billing',
     'Settings',
   ];
 
@@ -43,7 +46,8 @@ class _ManagerShellState extends State<ManagerShell> {
         2 => const ManagerRequestsScreen(),
         3 => const TeamScreen(),
         4 => const PricingScreen(),
-        5 => const SettingsScreen(),
+        5 => const BillingScreen(),
+        6 => const SettingsScreen(),
         _ => const ManagerScreen(),
       };
 

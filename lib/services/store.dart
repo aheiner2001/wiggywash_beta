@@ -13,6 +13,7 @@ import '../models/app_user.dart';
 import '../models/challenge.dart';
 import '../models/company.dart';
 import '../models/location.dart';
+import '../models/location_access.dart';
 import '../models/manager_invite.dart';
 import '../models/profile.dart';
 import '../models/request_preset.dart';
@@ -819,16 +820,20 @@ class Store extends ChangeNotifier {
           name: trimmedName,
           companyCode: code,
           status: CompanyStatus.pending,
+          purchasedSeats: 1,
           createdByEmail: user.email,
           createdByUid: user.uid,
         ).toMap(),
       );
+      final trialEnd = DateTime.now().add(const Duration(days: 14));
       batch.set(
         locRef,
         Location(
           id: locRef.id,
           name: trimmedLoc,
           city: city.trim(),
+          accessStatus: LocationAccessStatus.trial,
+          trialEndsAt: trialEnd,
         ).toMap(),
       );
       batch.set(
@@ -1894,6 +1899,24 @@ class Store extends ChangeNotifier {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
     try {
+      final company = _activeCompany;
+      final used = entitlement.seatsUsed(
+        _companyLocations.map((l) => entitlement.effectiveAccess(
+              l.accessStatus,
+              trialEndsAt: l.trialEndsAt,
+            )),
+      );
+      final seats = company?.purchasedSeats ?? 1;
+      final canSeat = entitlement.canActivateAnother(
+        purchasedSeats: seats,
+        seatsUsed: used,
+      );
+      final status = canSeat
+          ? LocationAccessStatus.trial
+          : LocationAccessStatus.readOnly;
+      final trialEnd = canSeat
+          ? DateTime.now().add(const Duration(days: 14))
+          : null;
       final ref = _locationsCol.doc();
       await ref.set(
         Location(
@@ -1901,12 +1924,82 @@ class Store extends ChangeNotifier {
           name: trimmed,
           city: city.trim(),
           siteCode: siteCode.trim(),
+          accessStatus: status,
+          trialEndsAt: trialEnd,
         ).toMap(),
       );
+      await previewCompany(_activeCompanyId!);
       return ref.id;
     } catch (e) {
       debugPrint('createLocation error: $e');
       return null;
+    }
+  }
+
+  Future<String?> setLocationAccessStatus({
+    required String locationId,
+    required LocationAccessStatus status,
+    DateTime? trialEndsAt,
+  }) async {
+    final company = _activeCompany;
+    if (company == null) return 'No active company.';
+    if (status == LocationAccessStatus.active ||
+        status == LocationAccessStatus.trial) {
+      final others = _companyLocations.where((l) => l.id != locationId).map(
+            (l) => entitlement.effectiveAccess(
+              l.accessStatus,
+              trialEndsAt: l.trialEndsAt,
+            ),
+          );
+      final used = entitlement.seatsUsed(others);
+      if (!entitlement.canActivateAnother(
+        purchasedSeats: company.purchasedSeats,
+        seatsUsed: used,
+      )) {
+        return 'No seats left. Ask platform admin to add seats.';
+      }
+    }
+    try {
+      final data = <String, dynamic>{
+        'accessStatus': status.firestoreValue,
+      };
+      if (status == LocationAccessStatus.trial) {
+        data['trialEndsAt'] = Timestamp.fromDate(
+          trialEndsAt ?? DateTime.now().add(const Duration(days: 14)),
+        );
+      } else {
+        data['trialEndsAt'] = FieldValue.delete();
+      }
+      await _locationsCol.doc(locationId).set(data, SetOptions(merge: true));
+      if (_activeCompanyId != null) {
+        await previewCompany(_activeCompanyId!);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('setLocationAccessStatus error: $e');
+      return 'Could not update location access.';
+    }
+  }
+
+  Future<String?> adminSetPurchasedSeats({
+    required String companyId,
+    required int seats,
+  }) async {
+    if (seats < 0) return 'Seats cannot be negative.';
+    try {
+      await _companiesCol.doc(companyId).set(
+        {'purchasedSeats': seats},
+        SetOptions(merge: true),
+      );
+      if (_activeCompanyId == companyId && _activeCompany != null) {
+        _activeCompany = _activeCompany!.copyWith(purchasedSeats: seats);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('adminSetPurchasedSeats error: $e');
+      return 'Could not update seats.';
     }
   }
 

@@ -41,6 +41,16 @@ service cloud.firestore {
       return signedIn()
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
+    function locationData(companyId, locationId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)/locations/$(locationId)).data;
+    }
+    // Missing accessStatus = active (legacy docs).
+    function locationAllowsWrites(companyId, locationId) {
+      let loc = locationData(companyId, locationId);
+      return !('accessStatus' in loc)
+        || loc.accessStatus == 'active'
+        || loc.accessStatus == 'trial';
+    }
 
     // ===== Wiggy Wash: company-scoped data =====
     match /companies/{companyId} {
@@ -58,33 +68,41 @@ service cloud.firestore {
         allow delete: if isPlatformAdmin();
 
         match /submissions/{doc} {
-          allow read, create, update: if signedIn();
+          allow read: if signedIn();
+          allow create, update: if signedIn()
+            && locationAllowsWrites(companyId, locationId);
           allow delete: if canManageCompany(companyId);
         }
         match /workers/{doc} {
           allow read: if signedIn();
-          allow write: if canManageCompany(companyId);
+          allow write: if canManageCompany(companyId)
+            && locationAllowsWrites(companyId, locationId);
         }
         match /config/{doc} {
           allow read: if signedIn();
-          allow write: if canManageCompany(companyId);
+          allow write: if canManageCompany(companyId)
+            && locationAllowsWrites(companyId, locationId);
         }
         match /challenges/{doc} {
           allow read: if signedIn();
-          allow write: if canManageCompany(companyId);
+          allow write: if canManageCompany(companyId)
+            && locationAllowsWrites(companyId, locationId);
         }
         match /requestPresets/{presetId} {
           allow read: if signedIn();
-          allow create, update, delete: if canManageCompany(companyId);
+          allow create, update, delete: if canManageCompany(companyId)
+            && locationAllowsWrites(companyId, locationId);
         }
         match /completionPresets/{presetId} {
           allow read: if signedIn();
-          allow create, update, delete: if canManageCompany(companyId);
+          allow create, update, delete: if canManageCompany(companyId)
+            && locationAllowsWrites(companyId, locationId);
         }
         match /staffRequests/{requestId} {
           allow read: if signedIn();
 
-          allow create: if canManageCompany(companyId)
+          allow create: if locationAllowsWrites(companyId, locationId)
+            && (canManageCompany(companyId)
             || (signedIn()
                 && request.resource.data.text is string
                 && request.resource.data.text.size() > 0
@@ -96,9 +114,10 @@ service cloud.firestore {
                     && request.resource.data.source == 'employee_ask')
                   || (request.resource.data.status == 'assigned'
                     && request.resource.data.source == 'employee_personal')
-                ));
+                )));
 
-          allow update: if canManageCompany(companyId)
+          allow update: if locationAllowsWrites(companyId, locationId)
+            && (canManageCompany(companyId)
             || (signedIn()
                 && resource.data.status == 'assigned'
                 && request.resource.data.status == 'awaitingReview'
@@ -115,10 +134,11 @@ service cloud.firestore {
                       'completedByUid',
                       'revisionNote',
                       'revisionRequestedAt'
-                    ]));
+                    ])));
 
           allow delete: if canManageCompany(companyId)
             || (signedIn()
+                && locationAllowsWrites(companyId, locationId)
                 && resource.data.source == 'employee_personal'
                 && resource.data.status == 'assigned'
                 && resource.data.assigneeProfileKey is string);

@@ -154,17 +154,56 @@ class _CompanyCard extends StatefulWidget {
 
 class _CompanyCardState extends State<_CompanyCard> {
   int _locationCount = 0;
+  late final TextEditingController _seats;
+  bool _seatsBusy = false;
 
   @override
   void initState() {
     super.initState();
+    _seats = TextEditingController(
+      text: '${widget.company.purchasedSeats}',
+    );
     _loadCount();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CompanyCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.company.purchasedSeats != widget.company.purchasedSeats) {
+      _seats.text = '${widget.company.purchasedSeats}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _seats.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCount() async {
     final n =
         await Store.instance.locationCountForCompany(widget.company.id);
     if (mounted) setState(() => _locationCount = n);
+  }
+
+  Future<void> _saveSeats() async {
+    final n = int.tryParse(_seats.text.trim());
+    if (n == null || n < 0) {
+      showStoreMessage(context, 'Enter a valid seat count', error: true);
+      return;
+    }
+    setState(() => _seatsBusy = true);
+    final err = await Store.instance.adminSetPurchasedSeats(
+      companyId: widget.company.id,
+      seats: n,
+    );
+    if (!mounted) return;
+    setState(() => _seatsBusy = false);
+    showStoreMessage(
+      context,
+      err ?? 'Seats updated to $n',
+      error: err != null,
+    );
   }
 
   Future<void> _approve() async {
@@ -259,8 +298,35 @@ class _CompanyCardState extends State<_CompanyCard> {
                 c.createdByEmail!,
               if (c.createdAt != null) _dateFmt.format(c.createdAt!),
               '$_locationCount location${_locationCount == 1 ? '' : 's'}',
+              '${c.purchasedSeats} seat${c.purchasedSeats == 1 ? '' : 's'}',
             ].join(' · '),
             style: TextStyles.caption,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _seats,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Purchased seats',
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _seatsBusy ? null : _saveSeats,
+                child: _seatsBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save seats'),
+              ),
+            ],
           ),
           if (c.rejectionReason != null && c.rejectionReason!.isNotEmpty) ...[
             const SizedBox(height: 6),
