@@ -481,8 +481,13 @@ class Store extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> signInWithGoogle({bool creating = false}) =>
-      _signIn(fb.GoogleAuthProvider(), creating: creating);
+  Future<String?> signInWithGoogle({bool creating = false}) {
+    final provider = fb.GoogleAuthProvider();
+    // Web often reuses the last Google session without a chooser, which makes
+    // "use a different account" feel stuck on the not-invited screen.
+    provider.setCustomParameters({'prompt': 'select_account'});
+    return _signIn(provider, creating: creating);
+  }
 
   Future<String?> signInWithApple({bool creating = false}) => _signIn(
         fb.AppleAuthProvider()
@@ -522,6 +527,24 @@ class Store extends ChangeNotifier {
       await _auth?.signInAnonymously();
     } catch (e) {
       debugPrint('signOutManager error: $e');
+    }
+  }
+
+  /// Leave the current Google manager session but stay on the manager auth
+  /// screen so the user can pick a different Google account.
+  Future<void> switchManagerGoogleAccount() async {
+    _pendingManagerCreate = false;
+    _managerClaimError = null;
+    _actingAsEmployee = false;
+    _actingName = null;
+    _showManagerAuth = true;
+    _appUser = null;
+    notifyListeners();
+    try {
+      await _auth?.signOut();
+      await _auth?.signInAnonymously();
+    } catch (e) {
+      debugPrint('switchManagerGoogleAccount error: $e');
     }
   }
 

@@ -196,7 +196,18 @@ class _ManagerAuthScreenState extends State<ManagerAuthScreen> {
             child: const Text('Create a new company'),
           ),
           TextButton(
-            onPressed: () => Store.instance.signOutManager(),
+            onPressed: () async {
+              await Store.instance.switchManagerGoogleAccount();
+              if (!mounted) return;
+              setState(() {
+                _creating = false;
+                _busy = true;
+              });
+              final err = await Store.instance.signInWithGoogle();
+              if (!mounted) return;
+              setState(() => _busy = false);
+              if (err != null) showStoreMessage(context, err, error: true);
+            },
             child: const Text('Use a different Google account'),
           ),
         ],
