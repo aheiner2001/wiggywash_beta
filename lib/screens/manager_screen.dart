@@ -16,9 +16,6 @@ import '../widgets/store_message.dart';
 import '../widgets/ui_kit.dart';
 import 'challenge_editor_screen.dart';
 import 'tips_screen.dart';
-import 'master_sheet_screen.dart';
-import 'pricing_screen.dart';
-import 'team_screen.dart';
 
 final _money = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 final _dayLabel = DateFormat('EEEE, MMM d');
@@ -304,41 +301,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
             ),
             icon: const Icon(Icons.info_outline_rounded),
           ),
-          AnimatedBuilder(
-            animation: Store.instance,
-            builder: (context, _) {
-              final pending = Store.instance.pendingSubmissions.length;
-              return IconButton(
-                tooltip: 'Master Sheet & approvals',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MasterSheetScreen()),
-                ),
-                icon: Badge(
-                  isLabelVisible: pending > 0,
-                  label: Text('$pending'),
-                  child: const Icon(Icons.table_chart_outlined),
-                ),
-              );
-            },
-          ),
           IconButton(
             tooltip: 'Fill out a scorecard',
             onPressed: _useScorecard,
             icon: const Icon(Icons.assignment_ind_outlined),
-          ),
-          IconButton(
-            tooltip: 'Team & site code',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TeamScreen()),
-            ),
-            icon: const Icon(Icons.group_outlined),
-          ),
-          IconButton(
-            tooltip: 'Edit prices',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PricingScreen()),
-            ),
-            icon: const Icon(Icons.sell_outlined),
           ),
           IconButton(
             tooltip: 'Export CSV',
@@ -476,7 +442,22 @@ class _PeopleCardsGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
-        final cross = w >= 900 ? 4 : (w >= 600 ? 3 : 2);
+        // Phones: one full-width card (fixed 2-col + aspect ratio clipped tallies).
+        if (w < 600) {
+          return Column(
+            children: [
+              for (final e in entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: MiniScorecardCard(
+                    name: e.key,
+                    submissions: e.value,
+                  ),
+                ),
+            ],
+          );
+        }
+        final cross = w >= 900 ? 4 : 3;
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -485,7 +466,7 @@ class _PeopleCardsGrid extends StatelessWidget {
             crossAxisCount: cross,
             mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: cross >= 3 ? 0.72 : 0.78,
+            childAspectRatio: cross >= 4 ? 0.72 : 0.78,
           ),
           itemBuilder: (context, i) {
             final e = entries[i];
