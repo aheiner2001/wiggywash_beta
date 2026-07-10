@@ -17,6 +17,7 @@ import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
 import '../widgets/ui_kit.dart';
+import 'employee_requests_screen.dart';
 import 'tips_screen.dart';
 import 'reports_screen.dart';
 
@@ -288,6 +289,15 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
             tooltip: 'Clear scorecard',
             onPressed: _hasAnyTally ? _resetCard : null,
             icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: 'Requests',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const EmployeeRequestsScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.campaign_outlined),
           ),
           const ProfileAction(),
         ],
