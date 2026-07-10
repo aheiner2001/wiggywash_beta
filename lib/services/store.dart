@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../config/auth_config.dart';
@@ -2031,6 +2033,55 @@ class Store extends ChangeNotifier {
         .orderBy('name')
         .get();
     return snap.docs.map(Location.fromDoc).toList();
+  }
+
+  Future<String?> startSeatCheckout({required int quantity}) async {
+    final company = _activeCompany;
+    if (company == null) return 'No active company.';
+    if (quantity < 1) return 'Quantity must be at least 1.';
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('createCheckoutSession');
+      final result = await callable.call(<String, dynamic>{
+        'companyId': company.id,
+        'quantity': quantity,
+        'returnOrigin': Uri.base.origin,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      if (data['updated'] == true) {
+        await previewCompany(company.id);
+        return null;
+      }
+      final url = data['url'] as String?;
+      if (url == null || url.isEmpty) return 'No checkout URL returned.';
+      final ok = await launchUrl(Uri.parse(url), webOnlyWindowName: '_self');
+      if (!ok) return 'Could not open Stripe Checkout.';
+      return null;
+    } catch (e) {
+      debugPrint('startSeatCheckout error: $e');
+      return 'Could not start checkout. Is Stripe configured?';
+    }
+  }
+
+  Future<String?> openBillingPortal() async {
+    final company = _activeCompany;
+    if (company == null) return 'No active company.';
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('createPortalSession');
+      final result = await callable.call(<String, dynamic>{
+        'companyId': company.id,
+        'returnOrigin': Uri.base.origin,
+      });
+      final url = (result.data as Map)['url'] as String?;
+      if (url == null || url.isEmpty) return 'No portal URL returned.';
+      final ok = await launchUrl(Uri.parse(url), webOnlyWindowName: '_self');
+      if (!ok) return 'Could not open billing portal.';
+      return null;
+    } catch (e) {
+      debugPrint('openBillingPortal error: $e');
+      return 'Buy seats once before managing payment methods.';
+    }
   }
 
   Future<String?> setLocationActive(String locationId, bool active) async {

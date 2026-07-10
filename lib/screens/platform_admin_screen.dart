@@ -387,6 +387,17 @@ class _CompanyCardState extends State<_CompanyCard> {
                 ),
               ),
           ],
+          if (c.stripeCustomerId != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              [
+                'Stripe: ${c.stripeCustomerId}',
+                if (c.stripeSubscriptionId != null) c.stripeSubscriptionId!,
+                if (c.billingStatus != null) c.billingStatus!,
+              ].join(' · '),
+              style: TextStyles.caption,
+            ),
+          ],
           if (c.rejectionReason != null && c.rejectionReason!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Reason: ${c.rejectionReason}', style: TextStyles.caption),

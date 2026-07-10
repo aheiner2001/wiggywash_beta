@@ -235,6 +235,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Webhook idempotency — Admin SDK only
+    match /stripeEvents/{id} {
+      allow read, write: if false;
+    }
+
     // Friends: public profile (name + stats summary). Shared by both apps —
     // the Wiggy Wash client only ever merges its own fields (role, locationId)
     // into its own uid, so the two coexist.
