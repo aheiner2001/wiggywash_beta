@@ -14,11 +14,15 @@ class TallyRow extends StatelessWidget {
     required this.item,
     required this.count,
     required this.onChanged,
+    this.stepButtonSize = 38,
+    this.verticalMargin = 5,
   });
 
   final LineItem item;
   final int count;
   final ValueChanged<int> onChanged;
+  final double stepButtonSize;
+  final double verticalMargin;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +30,7 @@ class TallyRow extends StatelessWidget {
     final lineTotal = price != null ? count * price : null;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
+      margin: EdgeInsets.symmetric(vertical: verticalMargin),
       padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -63,6 +67,7 @@ class TallyRow extends StatelessWidget {
           _StepButton(
             icon: Icons.remove_rounded,
             enabled: count > 0,
+            size: stepButtonSize,
             onTap: () => onChanged(count > 0 ? count - 1 : 0),
           ),
           SizedBox(
@@ -80,6 +85,7 @@ class TallyRow extends StatelessWidget {
           _StepButton(
             icon: Icons.add_rounded,
             enabled: true,
+            size: stepButtonSize,
             onTap: () => onChanged(count + 1),
           ),
           const SizedBox(width: 8),
@@ -97,11 +103,13 @@ class _StepButton extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.onTap,
+    this.size = 38,
   });
 
   final IconData icon;
   final bool enabled;
   final VoidCallback onTap;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -112,11 +120,11 @@ class _StepButton extends StatelessWidget {
         customBorder: const CircleBorder(),
         onTap: enabled ? onTap : null,
         child: SizedBox(
-          width: 38,
-          height: 38,
+          width: size,
+          height: size,
           child: Icon(
             icon,
-            size: 22,
+            size: size >= 48 ? 26 : 22,
             color: enabled ? Colors.white : AppColors.textMuted,
           ),
         ),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../utils/brand_color.dart';
+import '../utils/ui_density.dart';
 import '../widgets/store_message.dart';
 
 /// Manager appearance settings — company brand color (accent-only).
@@ -26,6 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color _draft = AppColors.navy;
   bool _busy = false;
   final _hex = TextEditingController();
+  UiDensity _density = UiDensity.comfortable;
+  bool _densityBusy = false;
 
   @override
   void initState() {
@@ -34,6 +37,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         parseBrandColor(Store.instance.activeCompany?.primaryColor);
     if (existing != null) _draft = existing;
     _hex.text = formatBrandColor(_draft);
+    UiDensityPrefs.load().then((p) {
+      if (!mounted) return;
+      setState(() => _density = p.density);
+    });
+  }
+
+  Future<void> _setDensity(UiDensity d) async {
+    setState(() {
+      _density = d;
+      _densityBusy = true;
+    });
+    await UiDensityPrefs.save(UiDensityPrefs(density: d));
+    if (!mounted) return;
+    setState(() => _densityBusy = false);
+    showStoreMessage(context, 'Density saved on this device');
   }
 
   @override
@@ -81,6 +99,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              AppCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Display density', style: TextStyles.subheading),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Comfortable or Compact for dashboard, scorecard, and login on this device. Master Sheet density stays separate.',
+                      style: TextStyles.caption,
+                    ),
+                    const SizedBox(height: 14),
+                    SegmentedButton<UiDensity>(
+                      segments: const [
+                        ButtonSegment(
+                          value: UiDensity.comfortable,
+                          label: Text('Comfortable'),
+                        ),
+                        ButtonSegment(
+                          value: UiDensity.compact,
+                          label: Text('Compact'),
+                        ),
+                      ],
+                      selected: {_density},
+                      onSelectionChanged: _densityBusy
+                          ? null
+                          : (s) => _setDensity(s.first),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               AppCard(
                 padding: const EdgeInsets.all(18),
                 child: Column(

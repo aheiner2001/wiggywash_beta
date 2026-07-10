@@ -4,7 +4,7 @@ import '../theme.dart';
 
 /// The Wiggy Wash logo lockup used on the onboarding screen.
 class BrandHeader extends StatelessWidget {
-  const BrandHeader({super.key, this.height = 96});
+  const BrandHeader({super.key, this.height = 112});
   final double height;
 
   @override
@@ -29,10 +29,10 @@ class BrandHeader extends StatelessWidget {
         const Text(
           'Sales Scorecard',
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 15,
             fontWeight: FontWeight.w700,
             color: AppColors.textMuted,
-            letterSpacing: 3,
+            letterSpacing: 2.5,
           ),
         ),
       ],

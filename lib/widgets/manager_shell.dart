@@ -37,10 +37,29 @@ class _ManagerShellState extends State<ManagerShell> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final body = KeyedSubtree(
+      key: ValueKey<int>(_index),
+      child: _page(_index),
+    );
+    final animatedBody = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeOut,
+      transitionBuilder: (child, animation) {
+        final offset = Tween<Offset>(
+          begin: const Offset(0.03, 0),
+          end: Offset.zero,
+        ).animate(animation);
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: offset, child: child),
+        );
+      },
+      child: body,
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 900;
-        final body = _page(_index);
         if (wide) {
           return Scaffold(
             body: Row(
@@ -65,13 +84,13 @@ class _ManagerShellState extends State<ManagerShell> {
                   ],
                 ),
                 const VerticalDivider(width: 1),
-                Expanded(child: body),
+                Expanded(child: animatedBody),
               ],
             ),
           );
         }
         return Scaffold(
-          body: body,
+          body: animatedBody,
           bottomNavigationBar: NavigationBar(
             selectedIndex: _index,
             onDestinationSelected: (i) => setState(() => _index = i),

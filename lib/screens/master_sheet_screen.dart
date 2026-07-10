@@ -1504,40 +1504,57 @@ class _PendingBanner extends StatelessWidget {
   }
 }
 
-class _PendingCard extends StatelessWidget {
+class _PendingCard extends StatefulWidget {
   const _PendingCard({required this.submission, required this.onChanged});
   final Submission submission;
   final VoidCallback onChanged;
 
-  Future<void> _approve(BuildContext context) async {
-    final err = await Store.instance.approveSubmission(submission.id);
-    if (context.mounted) {
-      showStoreMessage(context, err ?? 'Approved ${submission.employeeName}',
-          error: err != null);
+  @override
+  State<_PendingCard> createState() => _PendingCardState();
+}
+
+class _PendingCardState extends State<_PendingCard> {
+  bool _justApproved = false;
+
+  Future<void> _approve() async {
+    final err =
+        await Store.instance.approveSubmission(widget.submission.id);
+    if (!mounted) return;
+    showStoreMessage(
+      context,
+      err ?? 'Approved ${widget.submission.employeeName}',
+      error: err != null,
+    );
+    if (err == null) {
+      setState(() => _justApproved = true);
+      await Future<void>.delayed(const Duration(milliseconds: 280));
+      if (!mounted) return;
     }
-    onChanged();
+    widget.onChanged();
   }
 
-  Future<void> _edit(BuildContext context) async {
-    final result =
-        await showSubmissionEditor(context, existing: submission);
+  Future<void> _edit() async {
+    final result = await showSubmissionEditor(
+      context,
+      existing: widget.submission,
+    );
     if (result == null) return;
     await Store.instance.updateSubmission(
-      submission.id,
+      widget.submission.id,
       counts: result.counts,
       baGoal: result.baGoal,
       talkedTo: result.talkedTo,
     );
-    onChanged();
+    widget.onChanged();
   }
 
-  Future<void> _reject(BuildContext context) async {
+  Future<void> _reject() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Reject scorecard?'),
         content: Text(
-            'This permanently deletes ${submission.employeeName}\'s pending scorecard.'),
+            'This permanently deletes ${widget.submission.employeeName}\'s pending scorecard.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1551,65 +1568,74 @@ class _PendingCard extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await Store.instance.deleteSubmission(submission.id);
-    onChanged();
+    await Store.instance.deleteSubmission(widget.submission.id);
+    widget.onChanged();
   }
 
   @override
   Widget build(BuildContext context) {
-    final s = submission;
+    final s = widget.submission;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: AppCard(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: AnimatedScale(
+        scale: _justApproved ? 1.02 : 1.0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        child: AnimatedOpacity(
+          opacity: _justApproved ? 0.55 : 1.0,
+          duration: const Duration(milliseconds: 220),
+          child: AppCard(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(s.employeeName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15)),
-                ),
-                Text(_shortDate.format(s.submittedAt),
-                    style: TextStyles.caption),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Talked ${s.talkedTo} • BA ${s.businessAverage.toStringAsFixed(0)}% • '
-              'Score ${s.overallScore} • ${_money.format(s.grandTotalRevenue)}',
-              style: TextStyles.caption,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _approve(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(s.employeeName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 15)),
                     ),
-                    icon: const Icon(Icons.check_rounded, size: 18),
-                    label: const Text('Approve'),
-                  ),
+                    Text(_shortDate.format(s.submittedAt),
+                        style: TextStyles.caption),
+                  ],
                 ),
-                IconButton(
-                  tooltip: 'Edit',
-                  onPressed: () => _edit(context),
-                  icon: const Icon(Icons.edit_outlined),
+                const SizedBox(height: 4),
+                Text(
+                  'Talked ${s.talkedTo} • BA ${s.businessAverage.toStringAsFixed(0)}% • '
+                  'Score ${s.overallScore} • ${_money.format(s.grandTotalRevenue)}',
+                  style: TextStyles.caption,
                 ),
-                IconButton(
-                  tooltip: 'Reject',
-                  onPressed: () => _reject(context),
-                  icon: const Icon(Icons.close_rounded,
-                      color: AppColors.danger),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _justApproved ? null : _approve,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        icon: const Icon(Icons.check_rounded, size: 18),
+                        label: const Text('Approve'),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Edit',
+                      onPressed: _justApproved ? null : _edit,
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Reject',
+                      onPressed: _justApproved ? null : _reject,
+                      icon: const Icon(Icons.close_rounded,
+                          color: AppColors.danger),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

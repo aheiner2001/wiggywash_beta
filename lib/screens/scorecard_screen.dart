@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import '../models/scorecard_config.dart';
 import '../models/submission.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../utils/ui_density.dart';
 import '../widgets/challenge_card.dart';
 import '../widgets/profile_menu.dart';
 import '../widgets/store_message.dart';
@@ -44,6 +46,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   bool _seeded = false;
   bool _hadDraft = false;
   Timer? _flashTimer;
+  UiDensity _density = UiDensity.comfortable;
 
   /// Deterministic id so every Save during a shift updates the *same* running
   /// record for this employee on this day (instead of creating duplicates).
@@ -62,6 +65,10 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     _hadDraft = _restoreDraft();
     _seed();
     if (!_seeded) Store.instance.addListener(_seedWhenReady);
+    UiDensityPrefs.load().then((p) {
+      if (!mounted) return;
+      setState(() => _density = p.density);
+    });
   }
 
   bool _restoreDraft() {
@@ -233,7 +240,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     });
     _persistDraft();
     _flashTimer?.cancel();
-    _flashTimer = Timer(const Duration(seconds: 3), () {
+    _flashTimer = Timer(const Duration(milliseconds: 1200), () {
       if (mounted) setState(() => _showSavedFlash = false);
     });
   }
@@ -257,6 +264,10 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   @override
   Widget build(BuildContext context) {
     final live = _live;
+    final phone = MediaQuery.sizeOf(context).width < 600;
+    final stepSize = phone
+        ? math.max(_density.stepButtonSize, 48.0)
+        : _density.stepButtonSize;
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Scorecard'),
@@ -287,17 +298,22 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
               animation: Store.instance,
               builder: (context, _) {
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 120),
+                  padding: EdgeInsets.fromLTRB(
+                    _density.pagePadding,
+                    _density.pagePadding,
+                    _density.pagePadding,
+                    120,
+                  ),
                   children: [
                     if (Store.instance.challenge != null) ...[
                       const ChallengeCard(),
-                      const SizedBox(height: 8),
+                      SizedBox(height: _density.sectionGap - 4),
                     ],
                     if (Store.instance.seeAll) ...[
-                      const SizedBox(height: 8),
+                      SizedBox(height: _density.sectionGap - 4),
                       _TeamButton(),
                     ],
-                    const SizedBox(height: 8),
+                    SizedBox(height: _density.sectionGap - 4),
                     _HeaderCard(
                       name: widget.profile.name,
                       baController: _baGoal,
@@ -307,7 +323,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                         _persistDraft();
                       },
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: _density.sectionGap - 4),
                     _TalkedToCard(
                       value: _talkedTo,
                       onChanged: (v) {
@@ -315,11 +331,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
                         _persistDraft();
                       },
                     ),
-                    const SizedBox(height: 8),
-                    ..._buildSections(),
-                    const SizedBox(height: 12),
-                    _SummaryCard(live: live),
-                    const SizedBox(height: 12),
+                    SizedBox(height: _density.sectionGap - 4),
+                    ..._buildSections(stepSize),
+                    SizedBox(height: _density.sectionGap),
                     Center(
                       child: TextButton.icon(
                         onPressed: _hasAnyTally ? _shareToBaChat : null,
@@ -336,38 +350,49 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
       ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SaveStatus(
-              saving: _saving,
-              dirty: _dirty,
-              showFlash: _showSavedFlash,
-              hasSavedBefore: _hasSavedBefore,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.hairline)),
+            color: AppColors.surface,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StickyShiftSummary(live: live, talkedTo: _talkedTo),
+                const SizedBox(height: 8),
+                _SaveStatus(
+                  saving: _saving,
+                  dirty: _dirty,
+                  showFlash: _showSavedFlash,
+                  hasSavedBefore: _hasSavedBefore,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: (_dirty && !_saving) ? _save : null,
+                    icon: _saving
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.save_rounded),
+                    label: Text(_saving ? 'Saving…' : 'Save'),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: (_dirty && !_saving) ? _save : null,
-                icon: _saving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.save_rounded),
-                label: Text(_saving ? 'Saving…' : 'Save'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  List<Widget> _buildSections() {
+  List<Widget> _buildSections(double stepSize) {
     final widgets = <Widget>[];
     for (final section in Store.instance.enabledSections) {
       widgets.add(SectionPill(section.title));
@@ -377,6 +402,8 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
             item: item,
             count: _counts[item.id] ?? 0,
             onChanged: (v) => _set(item.id, v),
+            stepButtonSize: stepSize,
+            verticalMargin: _density.tallyVerticalMargin,
           ),
         );
       }
@@ -698,6 +725,56 @@ class _StatRow extends StatelessWidget {
   }
 }
 
+/// Compact sticky strip — Talked-to · BA% · $ — always visible with Save.
+class _StickyShiftSummary extends StatelessWidget {
+  const _StickyShiftSummary({required this.live, required this.talkedTo});
+  final Submission live;
+  final int talkedTo;
+
+  @override
+  Widget build(BuildContext context) {
+    final ba = live.businessAverage;
+    final color = baColor(ba, live.baGoal);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Talked $talkedTo',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: AppColors.navy,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            'BA ${ba.toStringAsFixed(0)}%',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: color,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            _money.format(live.grandTotalRevenue),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: AppColors.success,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Inline save-state indicator shown just above the Save button. Animates
 /// between "Unsaved changes", a brief "Saved to database" flash, and a
 /// persistent "Saved" checkmark.
@@ -761,7 +838,9 @@ class _SaveStatus extends StatelessWidget {
       child = const SizedBox(key: ValueKey('none'), height: 16);
     }
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeOut,
       child: child,
     );
   }

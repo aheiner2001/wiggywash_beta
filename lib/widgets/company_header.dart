@@ -19,18 +19,25 @@ class CompanyHeader extends StatelessWidget {
     return Column(
       children: [
         if (company!.logoUrl != null)
-          Image.network(company!.logoUrl!, height: 72)
+          Image.network(company!.logoUrl!, height: 88)
         else
           CircleAvatar(
-            radius: 36,
+            radius: 44,
             backgroundColor: AppColors.blueSoft,
             child: Text(initials,
                 style: const TextStyle(
-                    fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.navy)),
+                    fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.navy)),
           ),
-        const SizedBox(height: 8),
-        Text(company!.name,
-            style: TextStyles.subheading, textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        Text(
+          company!.name,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: AppColors.navy,
+          ),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 4),
         const Text('Sales Scorecard', style: TextStyles.caption),
       ],
