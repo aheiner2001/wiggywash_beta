@@ -143,9 +143,11 @@ class Store extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _settingsSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _itemsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _presetsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _completionPresetsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _staffRequestsSub;
 
   List<RequestPreset> _requestPresets = [];
+  List<RequestPreset> _completionPresets = [];
   List<StaffRequest> _staffRequests = [];
 
   /// Raw line-item customization for the active location.
@@ -167,10 +169,14 @@ class Store extends ChangeNotifier {
   /// The active team challenge for this location, if any.
   Challenge? get challenge => _challenge;
   List<RequestPreset> get requestPresets => List.unmodifiable(_requestPresets);
+  List<RequestPreset> get completionPresets =>
+      List.unmodifiable(_completionPresets);
   List<StaffRequest> get staffRequests => List.unmodifiable(_staffRequests);
-  int get pendingStaffRequestCount => _staffRequests
-      .where((r) => r.status == StaffRequestStatus.pending)
-      .length;
+  int get pendingStaffRequestCount => _staffRequests.where((r) {
+        if (!isManagerBoardVisible(r)) return false;
+        return r.status == StaffRequestStatus.pending ||
+            r.status == StaffRequestStatus.awaitingReview;
+      }).length;
   AppUser? get appUser => _appUser;
   String? get activeCompanyId => _activeCompanyId;
   Company? get activeCompany => _activeCompany;
@@ -1095,6 +1101,70 @@ class Store extends ChangeNotifier {
     }
   }
 
+  Future<String?> addCompletionPreset(String label) async {
+    final err = validatePresetLabel(label);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    if (_completionPresets.length >= kCompletionPresetCap) {
+      return 'Limit of $kCompletionPresetCap completion presets reached.';
+    }
+    final me = _appUser;
+    try {
+      final nextOrder = _completionPresets.isEmpty
+          ? 0
+          : _completionPresets
+                  .map((p) => p.sortOrder)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
+      await loc.collection('completionPresets').add({
+        'label': label.trim(),
+        'sortOrder': nextOrder,
+        if (me != null) 'createdByUid': me.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      debugPrint('addCompletionPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not add preset.');
+    }
+  }
+
+  Future<String?> updateCompletionPreset({
+    required String id,
+    required String label,
+    int? sortOrder,
+  }) async {
+    final err = validatePresetLabel(label);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    try {
+      final data = <String, dynamic>{'label': label.trim()};
+      if (sortOrder != null) data['sortOrder'] = sortOrder;
+      await loc
+          .collection('completionPresets')
+          .doc(id)
+          .set(data, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('updateCompletionPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not update preset.');
+    }
+  }
+
+  Future<String?> deleteCompletionPreset(String id) async {
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    try {
+      await loc.collection('completionPresets').doc(id).delete();
+      return null;
+    } catch (e) {
+      debugPrint('deleteCompletionPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not delete preset.');
+    }
+  }
+
   Future<String?> createStaffRequest({
     required String text,
     String? presetId,
@@ -1110,6 +1180,7 @@ class Store extends ChangeNotifier {
         'text': text.trim(),
         'employeeName': name,
         'employeeProfileKey': staffRequestProfileKey(name),
+        'source': StaffRequestSource.employeeAsk.firestoreValue,
         'status': StaffRequestStatus.pending.firestoreValue,
         'createdAt': FieldValue.serverTimestamp(),
       };
@@ -1145,18 +1216,27 @@ class Store extends ChangeNotifier {
         case StaffRequestStatus.accepted:
           data['acceptedAt'] = FieldValue.serverTimestamp();
           if (uid != null) data['acceptedByUid'] = uid;
-          break;
-        case StaffRequestStatus.completed:
+        case StaffRequestStatus.closed:
           data['completedAt'] = FieldValue.serverTimestamp();
           if (uid != null) data['completedByUid'] = uid;
-          break;
+          data['reviewedAt'] = FieldValue.serverTimestamp();
+          if (uid != null) data['reviewedByUid'] = uid;
+        case StaffRequestStatus.assigned:
+          data['reviewedAt'] = FieldValue.delete();
+          data['reviewedByUid'] = FieldValue.delete();
+        case StaffRequestStatus.awaitingReview:
+          data['completedAt'] = FieldValue.serverTimestamp();
+          if (uid != null) data['completedByUid'] = uid;
         case StaffRequestStatus.dismissed:
           data['dismissedAt'] = FieldValue.serverTimestamp();
-          break;
         case StaffRequestStatus.pending:
+        case StaffRequestStatus.completed:
           break;
       }
-      await loc.collection('staffRequests').doc(id).set(data, SetOptions(merge: true));
+      await loc
+          .collection('staffRequests')
+          .doc(id)
+          .set(data, SetOptions(merge: true));
       return null;
     } catch (e) {
       debugPrint('transitionStaffRequest error: $e');
@@ -1171,7 +1251,178 @@ class Store extends ChangeNotifier {
       _transitionStaffRequest(id, StaffRequestStatus.dismissed);
 
   Future<String?> completeStaffRequest(String id) =>
-      _transitionStaffRequest(id, StaffRequestStatus.completed);
+      _transitionStaffRequest(id, StaffRequestStatus.closed);
+
+  Future<String?> closeStaffRequest(String id) =>
+      _transitionStaffRequest(id, StaffRequestStatus.closed);
+
+  Future<String?> reopenStaffRequest(String id) =>
+      _transitionStaffRequest(id, StaffRequestStatus.assigned);
+
+  Future<String?> assignStaffRequest({
+    required String id,
+    required String assigneeName,
+    DateTime? dueAt,
+  }) async {
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    final name = assigneeName.trim();
+    if (name.isEmpty) return 'Pick a team member.';
+    StaffRequest? current;
+    for (final r in _staffRequests) {
+      if (r.id == id) current = r;
+    }
+    if (current == null) return 'Request not found.';
+    if (!canTransition(current.status, StaffRequestStatus.assigned)) {
+      return 'That status change is not allowed.';
+    }
+    final uid = _appUser?.uid;
+    try {
+      final data = <String, dynamic>{
+        'status': StaffRequestStatus.assigned.firestoreValue,
+        'assigneeName': name,
+        'assigneeProfileKey': staffRequestProfileKey(name),
+        'assignedAt': FieldValue.serverTimestamp(),
+        if (uid != null) 'assignedByUid': uid,
+      };
+      if (dueAt != null) {
+        data['dueAt'] = Timestamp.fromDate(dueAt);
+      } else {
+        data['dueAt'] = FieldValue.delete();
+      }
+      await loc
+          .collection('staffRequests')
+          .doc(id)
+          .set(data, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('assignStaffRequest error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not assign.');
+    }
+  }
+
+  Future<String?> createAssignedTask({
+    required String text,
+    required String assigneeName,
+    DateTime? dueAt,
+  }) async {
+    final err = validateRequestText(text);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    final name = assigneeName.trim();
+    if (name.isEmpty) return 'Pick a team member.';
+    final uid = _appUser?.uid;
+    try {
+      await loc.collection('staffRequests').add({
+        'text': text.trim(),
+        'employeeName': name,
+        'employeeProfileKey': staffRequestProfileKey(name),
+        'assigneeName': name,
+        'assigneeProfileKey': staffRequestProfileKey(name),
+        'source': StaffRequestSource.managerAssign.firestoreValue,
+        'status': StaffRequestStatus.assigned.firestoreValue,
+        'assignedAt': FieldValue.serverTimestamp(),
+        if (uid != null) 'assignedByUid': uid,
+        if (dueAt != null) 'dueAt': Timestamp.fromDate(dueAt),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      debugPrint('createAssignedTask error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not create task.');
+    }
+  }
+
+  Future<String?> createPersonalTodo(String text) async {
+    final err = validateRequestText(text);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    final name = profile?.name.trim() ?? '';
+    if (name.isEmpty) return 'Sign in as an employee first.';
+    final key = staffRequestProfileKey(name);
+    try {
+      await loc.collection('staffRequests').add({
+        'text': text.trim(),
+        'employeeName': name,
+        'employeeProfileKey': key,
+        'assigneeName': name,
+        'assigneeProfileKey': key,
+        'source': StaffRequestSource.employeePersonal.firestoreValue,
+        'status': StaffRequestStatus.assigned.firestoreValue,
+        'assignedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      debugPrint('createPersonalTodo error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not add to-do.');
+    }
+  }
+
+  Future<String?> deletePersonalTodo(String id) async {
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    StaffRequest? current;
+    for (final r in _staffRequests) {
+      if (r.id == id) current = r;
+    }
+    if (current == null) return 'Not found.';
+    if (current.source != StaffRequestSource.employeePersonal) {
+      return 'Only personal to-dos can be removed this way.';
+    }
+    try {
+      await loc.collection('staffRequests').doc(id).delete();
+      return null;
+    } catch (e) {
+      debugPrint('deletePersonalTodo error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not remove to-do.');
+    }
+  }
+
+  Future<String?> submitAssignedCompletion({
+    required String id,
+    required String note,
+    String? completionPresetId,
+    String? completionPresetLabel,
+  }) async {
+    final err = validateCompletionPayload(
+      note: note,
+      presetLabel: completionPresetLabel,
+    );
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    StaffRequest? current;
+    for (final r in _staffRequests) {
+      if (r.id == id) current = r;
+    }
+    if (current == null) return 'Not found.';
+    if (current.isPersonal) {
+      return 'Personal to-dos are removed, not reviewed.';
+    }
+    if (!canTransition(current.status, StaffRequestStatus.awaitingReview)) {
+      return 'That status change is not allowed.';
+    }
+    final uid = _appUser?.uid;
+    try {
+      await loc.collection('staffRequests').doc(id).set({
+        'status': StaffRequestStatus.awaitingReview.firestoreValue,
+        'completionNote': note.trim(),
+        if (completionPresetId != null)
+          'completionPresetId': completionPresetId,
+        if (completionPresetLabel != null)
+          'completionPresetLabel': completionPresetLabel.trim(),
+        'completedAt': FieldValue.serverTimestamp(),
+        if (uid != null) 'completedByUid': uid,
+      }, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('submitAssignedCompletion error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not submit.');
+    }
+  }
 
   Future<String?> approveCompany(String companyId) async {
     final admin = _appUser;
@@ -1511,13 +1762,15 @@ class Store extends ChangeNotifier {
     _settingsSub?.cancel();
     _itemsSub?.cancel();
     _presetsSub?.cancel();
+    _completionPresetsSub?.cancel();
     _staffRequestsSub?.cancel();
     _subsSub = _workersSub = null;
     _pricesSub = _settingsSub = _itemsSub = null;
-    _presetsSub = _staffRequestsSub = null;
+    _presetsSub = _completionPresetsSub = _staffRequestsSub = null;
     _submissions = [];
     _workers = [];
     _requestPresets = [];
+    _completionPresets = [];
     _staffRequests = [];
     _itemConfig = {};
     ItemBook.reset();
@@ -1583,6 +1836,16 @@ class Store extends ChangeNotifier {
       _requestPresets = snap.docs.map(RequestPreset.fromDoc).toList();
       notifyListeners();
     }, onError: (Object e) => debugPrint('requestPresets listen error: $e'));
+
+    _completionPresetsSub = base
+        .collection('completionPresets')
+        .orderBy('sortOrder')
+        .snapshots()
+        .listen((snap) {
+      _completionPresets = snap.docs.map(RequestPreset.fromDoc).toList();
+      notifyListeners();
+    }, onError: (Object e) =>
+        debugPrint('completionPresets listen error: $e'));
 
     _staffRequestsSub = base
         .collection('staffRequests')

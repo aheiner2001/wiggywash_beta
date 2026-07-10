@@ -77,16 +77,49 @@ service cloud.firestore {
           allow read: if signedIn();
           allow create, update, delete: if canManageCompany(companyId);
         }
+        match /completionPresets/{presetId} {
+          allow read: if signedIn();
+          allow create, update, delete: if canManageCompany(companyId);
+        }
         match /staffRequests/{requestId} {
           allow read: if signedIn();
-          allow create: if signedIn()
-            && request.resource.data.status == 'pending'
-            && request.resource.data.text is string
-            && request.resource.data.text.size() > 0
-            && request.resource.data.text.size() <= 120
-            && request.resource.data.employeeName is string
-            && request.resource.data.employeeName.size() > 0;
-          allow update, delete: if canManageCompany(companyId);
+
+          allow create: if canManageCompany(companyId)
+            || (signedIn()
+                && request.resource.data.text is string
+                && request.resource.data.text.size() > 0
+                && request.resource.data.text.size() <= 120
+                && request.resource.data.employeeName is string
+                && request.resource.data.employeeName.size() > 0
+                && (
+                  (request.resource.data.status == 'pending'
+                    && request.resource.data.source == 'employee_ask')
+                  || (request.resource.data.status == 'assigned'
+                    && request.resource.data.source == 'employee_personal')
+                ));
+
+          allow update: if canManageCompany(companyId)
+            || (signedIn()
+                && resource.data.status == 'assigned'
+                && request.resource.data.status == 'awaitingReview'
+                && resource.data.assigneeProfileKey is string
+                && request.resource.data.assigneeProfileKey
+                    == resource.data.assigneeProfileKey
+                && request.resource.data.diff(resource.data).affectedKeys()
+                    .hasOnly([
+                      'status',
+                      'completionNote',
+                      'completionPresetId',
+                      'completionPresetLabel',
+                      'completedAt',
+                      'completedByUid'
+                    ]));
+
+          allow delete: if canManageCompany(companyId)
+            || (signedIn()
+                && resource.data.source == 'employee_personal'
+                && resource.data.status == 'assigned'
+                && resource.data.assigneeProfileKey is string);
         }
       }
 

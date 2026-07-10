@@ -5,6 +5,7 @@ import '../models/request_preset.dart';
 import '../models/staff_request.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../utils/staff_request_logic.dart';
 import '../widgets/store_message.dart';
 
 final _time = DateFormat('h:mm a');
@@ -170,6 +171,26 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
         title: const Text('Requests'),
         actions: [
           Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed: _busy ? null : _openAssignTaskDialog,
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: primary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+              label: const Text(
+                'Assign task',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.only(right: 12),
             child: TextButton.icon(
               onPressed: _busy ? null : _openAddPresetDialog,
@@ -194,18 +215,25 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
       body: AnimatedBuilder(
         animation: Store.instance,
         builder: (context, _) {
-          final all = Store.instance.staffRequests;
+          final all = Store.instance.staffRequests
+              .where(isManagerBoardVisible)
+              .toList();
           final incoming = _sortedIncoming(
             all
                 .where((r) => r.status == StaffRequestStatus.pending)
                 .toList(),
           );
           final todos = all
-              .where((r) => r.status == StaffRequestStatus.accepted)
+              .where(
+                (r) =>
+                    r.status == StaffRequestStatus.accepted ||
+                    r.status == StaffRequestStatus.awaitingReview,
+              )
               .toList();
           final presets = Store.instance.requestPresets;
           final visiblePresets =
               _showAllPresets ? presets : presets.take(6).toList();
+          final completionPresets = Store.instance.completionPresets;
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -328,6 +356,8 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
                   KeyedSubtree(
                     key: _presetsKey,
                     child: _PresetsSection(
+                      title: 'Presets',
+                      subtitle: 'Chips employees can tap',
                       count: presets.length,
                       controller: _presetLabel,
                       focusNode: _presetFocus,
@@ -343,6 +373,18 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
                                 () => Store.instance.deleteRequestPreset(id),
                               ),
                     ),
+                  ),
+                  const SizedBox(height: 28),
+                  _CompletionPresetsSection(
+                    presets: completionPresets,
+                    busy: _busy,
+                    onAdd: _busy ? null : _addCompletionPresetDialog,
+                    onRename: _busy ? null : _renameCompletionPreset,
+                    onDelete: _busy
+                        ? null
+                        : (id) => _run(
+                              () => Store.instance.deleteCompletionPreset(id),
+                            ),
                   ),
                 ],
               );
@@ -371,17 +413,302 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
         ),
       ];
 
-  List<Widget> _todoActions(StaffRequest r) => [
+  List<Widget> _todoActions(StaffRequest r) {
+    if (r.status == StaffRequestStatus.awaitingReview) {
+      return [
         FilledButton(
-          onPressed: _busy
-              ? null
-              : () => _run(
-                    () => Store.instance.completeStaffRequest(r.id),
-                    ok: 'Marked complete',
-                  ),
-          child: const Text('Mark complete'),
+          onPressed: _busy ? null : () => _openReview(r),
+          child: const Text('Review'),
         ),
       ];
+    }
+    return [
+      TextButton(
+        onPressed: _busy
+            ? null
+            : () => _run(() => Store.instance.dismissStaffRequest(r.id)),
+        child: const Text('Delete'),
+      ),
+      TextButton(
+        onPressed: _busy ? null : () => _openAssign(r),
+        child: const Text('Assign to…'),
+      ),
+      FilledButton(
+        onPressed: _busy
+            ? null
+            : () => _run(
+                  () => Store.instance.completeStaffRequest(r.id),
+                  ok: 'Closed',
+                ),
+        child: const Text('Mark complete'),
+      ),
+    ];
+  }
+
+  Future<void> _openAssign(StaffRequest r) async {
+    final workers = Store.instance.workers;
+    if (workers.isEmpty) {
+      showStoreMessage(context, 'Add team members first', error: true);
+      return;
+    }
+    String? selected = workers.first.name;
+    DateTime? due;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Assign to…'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selected,
+                items: [
+                  for (final w in workers)
+                    DropdownMenuItem(value: w.name, child: Text(w.name)),
+                ],
+                onChanged: (v) => setLocal(() => selected = v),
+                decoration: const InputDecoration(labelText: 'Employee'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () async {
+                  final now = DateTime.now();
+                  final d = await showDatePicker(
+                    context: ctx,
+                    firstDate: now,
+                    lastDate: now.add(const Duration(days: 365)),
+                    initialDate: due ?? now,
+                  );
+                  if (d == null || !ctx.mounted) return;
+                  final t = await showTimePicker(
+                    context: ctx,
+                    initialTime: TimeOfDay.fromDateTime(due ?? now),
+                  );
+                  if (t == null) return;
+                  setLocal(() {
+                    due = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                  });
+                },
+                child: Text(
+                  due == null
+                      ? 'Optional: set due time'
+                      : 'Due ${DateFormat('MMM d · h:mm a').format(due!)}',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || selected == null || !mounted) return;
+    await _run(
+      () => Store.instance.assignStaffRequest(
+        id: r.id,
+        assigneeName: selected!,
+        dueAt: due,
+      ),
+      ok: 'Assigned',
+    );
+  }
+
+  Future<void> _openReview(StaffRequest r) async {
+    final note = (r.completionNote ?? '').trim();
+    final preset = (r.completionPresetLabel ?? '').trim();
+    final body = [
+      if (preset.isNotEmpty) 'Preset: $preset',
+      if (note.isNotEmpty) note,
+    ].join('\n');
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review completion'),
+        content: Text(body.isEmpty ? '(No note)' : body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'reopen'),
+            child: const Text('Reopen'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 'close'),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'close') {
+      await _run(() => Store.instance.closeStaffRequest(r.id), ok: 'Closed');
+    } else if (action == 'reopen') {
+      await _run(
+        () => Store.instance.reopenStaffRequest(r.id),
+        ok: 'Reopened',
+      );
+    }
+  }
+
+  Future<void> _openAssignTaskDialog() async {
+    final workers = Store.instance.workers;
+    if (workers.isEmpty) {
+      showStoreMessage(context, 'Add team members first', error: true);
+      return;
+    }
+    final text = TextEditingController();
+    String? selected = workers.first.name;
+    DateTime? due;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Assign task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: text,
+                maxLength: kStaffRequestMaxLen,
+                decoration: const InputDecoration(
+                  labelText: 'Task',
+                  hintText: 'Restock towels at bay 2',
+                ),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: selected,
+                items: [
+                  for (final w in workers)
+                    DropdownMenuItem(value: w.name, child: Text(w.name)),
+                ],
+                onChanged: (v) => setLocal(() => selected = v),
+                decoration: const InputDecoration(labelText: 'Employee'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final now = DateTime.now();
+                  final d = await showDatePicker(
+                    context: ctx,
+                    firstDate: now,
+                    lastDate: now.add(const Duration(days: 365)),
+                    initialDate: due ?? now,
+                  );
+                  if (d == null || !ctx.mounted) return;
+                  final t = await showTimePicker(
+                    context: ctx,
+                    initialTime: TimeOfDay.fromDateTime(due ?? now),
+                  );
+                  if (t == null) return;
+                  setLocal(() {
+                    due = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                  });
+                },
+                child: Text(
+                  due == null
+                      ? 'Optional: set due time'
+                      : 'Due ${DateFormat('MMM d · h:mm a').format(due!)}',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final body = text.text;
+    text.dispose();
+    if (ok != true || selected == null || !mounted) return;
+    await _run(
+      () => Store.instance.createAssignedTask(
+        text: body,
+        assigneeName: selected!,
+        dueAt: due,
+      ),
+      ok: 'Task assigned',
+    );
+  }
+
+  Future<void> _addCompletionPresetDialog() async {
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add completion preset'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Label',
+            hintText: 'All good',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    final label = c.text;
+    c.dispose();
+    if (ok != true || !mounted) return;
+    await _run(
+      () => Store.instance.addCompletionPreset(label),
+      ok: 'Preset added',
+    );
+  }
+
+  Future<void> _renameCompletionPreset(RequestPreset p) async {
+    final c = TextEditingController(text: p.label);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit completion preset'),
+        content: TextField(
+          controller: c,
+          decoration: const InputDecoration(labelText: 'Label'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final text = c.text;
+    c.dispose();
+    if (ok != true || !mounted) return;
+    await _run(
+      () => Store.instance.updateCompletionPreset(id: p.id, label: text),
+    );
+  }
 }
 
 class _SortFilterButton extends StatelessWidget {
@@ -565,6 +892,12 @@ class _RequestTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final when =
         request.createdAt != null ? _time.format(request.createdAt!) : '';
+    final due = formatDueCaption(request.dueAt);
+    final needsReview =
+        request.status == StaffRequestStatus.awaitingReview;
+    final who = request.assigneeName?.isNotEmpty == true
+        ? request.assigneeName!
+        : request.employeeName;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
@@ -573,6 +906,18 @@ class _RequestTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (needsReview)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Needs review',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFC62828),
+                  ),
+                ),
+              ),
             Text(
               request.text,
               style: const TextStyle(
@@ -583,9 +928,13 @@ class _RequestTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${request.employeeName}${when.isEmpty ? '' : ' · $when'}',
+              '$who${when.isEmpty ? '' : ' · $when'}',
               style: TextStyles.caption,
             ),
+            if (due.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(due, style: TextStyles.caption),
+            ],
             const SizedBox(height: 10),
             Wrap(
               alignment: WrapAlignment.end,
@@ -602,6 +951,8 @@ class _RequestTile extends StatelessWidget {
 
 class _PresetsSection extends StatelessWidget {
   const _PresetsSection({
+    required this.title,
+    required this.subtitle,
     required this.count,
     required this.controller,
     required this.focusNode,
@@ -614,6 +965,8 @@ class _PresetsSection extends StatelessWidget {
     required this.onDelete,
   });
 
+  final String title;
+  final String subtitle;
   final int count;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -633,9 +986,9 @@ class _PresetsSection extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Text(
-              'Presets',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 color: AppColors.textPrimary,
@@ -646,10 +999,7 @@ class _PresetsSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Chips employees can tap',
-          style: TextStyles.caption,
-        ),
+        Text(subtitle, style: TextStyles.caption),
         const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -813,6 +1163,72 @@ class _PresetChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CompletionPresetsSection extends StatelessWidget {
+  const _CompletionPresetsSection({
+    required this.presets,
+    required this.busy,
+    required this.onAdd,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final List<RequestPreset> presets;
+  final bool busy;
+  final VoidCallback? onAdd;
+  final Future<void> Function(RequestPreset p)? onRename;
+  final Future<void> Function(String id)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Completion presets',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _CountBadge(presets.length),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Quick replies when employees mark work done',
+          style: TextStyles.caption,
+        ),
+        const SizedBox(height: 14),
+        if (presets.isEmpty)
+          const Text('No completion presets yet', style: TextStyles.caption)
+        else
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final p in presets)
+                _PresetChip(
+                  label: p.label,
+                  onEdit: onRename == null ? null : () => onRename!(p),
+                  onDelete: onDelete == null ? null : () => onDelete!(p.id),
+                ),
+            ],
+          ),
+      ],
     );
   }
 }
