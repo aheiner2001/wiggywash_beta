@@ -5,6 +5,7 @@ import '../models/location.dart';
 import '../models/worker.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../utils/ui_density.dart';
 import '../widgets/company_header.dart';
 import '../widgets/step_indicator.dart';
 
@@ -30,6 +31,16 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
   Location? _location;
   Worker? _selected;
   String? _pinError;
+  UiDensity _density = UiDensity.comfortable;
+
+  @override
+  void initState() {
+    super.initState();
+    UiDensityPrefs.load().then((p) {
+      if (!mounted) return;
+      setState(() => _density = p.density);
+    });
+  }
 
   @override
   void dispose() {
@@ -150,7 +161,7 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(_density.pagePadding + 10),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
@@ -186,7 +197,7 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
 
   Widget _buildCodeStep() {
     return AppCard(
-      padding: const EdgeInsets.all(32),
+      padding: EdgeInsets.all(_density.loginCardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
