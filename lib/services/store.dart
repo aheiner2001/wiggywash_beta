@@ -23,9 +23,13 @@ import '../models/worker.dart';
 import '../theme/app_theme_id.dart';
 import '../utils/brand_color.dart';
 import '../utils/firestore_user_error.dart';
+import '../utils/location_entitlement.dart' as entitlement;
 import '../utils/manager_invite_logic.dart';
 import '../utils/staff_request_logic.dart';
 import 'company_migration.dart' as company_migration;
+
+/// Where [CompanyLoginScreen] should resume after Switch person/location.
+enum EmployeeLoginResume { none, location, name }
 
 /// Where the app should send the user right now.
 enum AppView {
@@ -76,6 +80,7 @@ class Store extends ChangeNotifier {
   static const _kCompanies = 'companies';
   static const _kActiveCompany = 'ww_active_company';
   static const _kEmployeeCompanyCode = 'ww_employee_company_code';
+  static const _kRecentLocations = 'ww_recent_locations';
 
   static const _kLocations = 'locations';
   static const _kUsers = 'users';
@@ -100,6 +105,8 @@ class Store extends ChangeNotifier {
   // Employee identity (local, device-remembered).
   String? _employeeName;
   String? _employeeLocationId;
+  bool _pinUnlockedThisLaunch = false;
+  EmployeeLoginResume employeeLoginResume = EmployeeLoginResume.none;
 
   // Navigation flags driven by the user.
   bool _showManagerAuth = false;
@@ -193,6 +200,28 @@ class Store extends ChangeNotifier {
       if (l.id == _activeLocationId) return l;
     }
     return null;
+  }
+
+  /// Effective write access for the active location (trial expiry applied).
+  bool get canWriteAtActiveLocation {
+    final loc = activeLocation;
+    if (loc == null) return false;
+    return entitlement.locationAllowsWrites(
+      entitlement.effectiveAccess(
+        loc.accessStatus,
+        trialEndsAt: loc.trialEndsAt,
+      ),
+    );
+  }
+
+  String get readOnlyMessage =>
+      'This site is read-only. Ask your manager to update billing.';
+
+  bool get pinUnlockedThisLaunch => _pinUnlockedThisLaunch;
+
+  void unlockPinForLaunch() {
+    _pinUnlockedThisLaunch = true;
+    notifyListeners();
   }
 
   /// True when a real (non-anonymous, e.g. Google) account is signed in.
@@ -390,6 +419,7 @@ class Store extends ChangeNotifier {
         await _cacheSingleLocation(_activeLocationId);
         _bindLocation(_activeLocationId);
       }
+      await _validateEmployeeSession();
       _userSub = ref.snapshots().listen(_onUserDoc, onError: (Object e) {
         debugPrint('user doc listen error: $e');
       });
@@ -569,17 +599,123 @@ class Store extends ChangeNotifier {
     }
   }
 
-  /// Sign out an employee on this device (clears the remembered name).
+  /// Sign out an employee on this device (clears the remembered session).
   Future<void> signOutEmployee() async {
     _employeeName = null;
     _employeeLocationId = null;
     _activeCompanyId = null;
     _activeCompany = null;
+    _activeLocationId = null;
     _companyLocations = [];
+    _pinUnlockedThisLaunch = false;
+    employeeLoginResume = EmployeeLoginResume.none;
     await _prefs?.remove(_kEmployeeProfile);
     await _prefs?.remove(_kActiveCompany);
     await _prefs?.remove(_kEmployeeCompanyCode);
+    await _prefs?.remove(_kActiveLocation);
     notifyListeners();
+  }
+
+  /// Keep company + location; clear person and resume at name picker.
+  Future<void> switchEmployeePerson() async {
+    _employeeName = null;
+    _employeeLocationId = null;
+    _pinUnlockedThisLaunch = false;
+    employeeLoginResume = EmployeeLoginResume.name;
+    await _prefs?.remove(_kEmployeeProfile);
+    notifyListeners();
+  }
+
+  /// Keep company; clear location + person and resume at location picker.
+  Future<void> switchEmployeeLocation() async {
+    _employeeName = null;
+    _employeeLocationId = null;
+    _pinUnlockedThisLaunch = false;
+    employeeLoginResume = EmployeeLoginResume.location;
+    await _prefs?.remove(_kEmployeeProfile);
+    _activeLocationId = null;
+    await _prefs?.remove(_kActiveLocation);
+    notifyListeners();
+  }
+
+  List<String> loadRecentLocationIds() {
+    final raw = _prefs?.getString(_kRecentLocations);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> rememberRecentLocation(String id) async {
+    if (id.isEmpty) return;
+    final next = <String>[id];
+    for (final existing in loadRecentLocationIds()) {
+      if (existing != id) next.add(existing);
+      if (next.length >= 5) break;
+    }
+    await _prefs?.setString(_kRecentLocations, jsonEncode(next));
+  }
+
+  /// Re-validates a remembered employee session against Firestore.
+  Future<void> _validateEmployeeSession() async {
+    if (_employeeName == null || _employeeName!.trim().isEmpty) return;
+    final companyId = _activeCompanyId;
+    if (companyId == null || companyId.isEmpty) {
+      await signOutEmployee();
+      return;
+    }
+    try {
+      final companyDoc = await _companiesCol.doc(companyId).get();
+      if (!companyDoc.exists) {
+        await signOutEmployee();
+        return;
+      }
+      final company = Company.fromDoc(companyDoc);
+      _activeCompany = company;
+      if (company.status != CompanyStatus.active) {
+        await signOutEmployee();
+        return;
+      }
+      final locSnap = await _locationsCol.orderBy('name').get();
+      _companyLocations = locSnap.docs.map(Location.fromDoc).toList();
+      final locId = _employeeLocationId ?? _activeLocationId;
+      Location? loc;
+      for (final l in _companyLocations) {
+        if (l.id == locId) loc = l;
+      }
+      if (loc == null || !loc.active) {
+        _employeeName = null;
+        _employeeLocationId = null;
+        _activeLocationId = null;
+        _pinUnlockedThisLaunch = false;
+        employeeLoginResume = EmployeeLoginResume.location;
+        await _prefs?.remove(_kEmployeeProfile);
+        await _prefs?.remove(_kActiveLocation);
+        notifyListeners();
+        return;
+      }
+      _activeLocationId = loc.id;
+      await rememberRecentLocation(loc.id);
+      // Workers may not be loaded yet; check roster once bound.
+      if (_workers.isNotEmpty) {
+        final name = _employeeName!.trim().toLowerCase();
+        final onRoster =
+            _workers.any((w) => w.name.trim().toLowerCase() == name);
+        if (!onRoster) {
+          _employeeName = null;
+          _employeeLocationId = null;
+          _pinUnlockedThisLaunch = false;
+          employeeLoginResume = EmployeeLoginResume.name;
+          await _prefs?.remove(_kEmployeeProfile);
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('_validateEmployeeSession error: $e');
+    }
   }
 
   Future<bool> companyExists(String companyId) async {
@@ -1223,6 +1359,7 @@ class Store extends ChangeNotifier {
     required String text,
     String? presetId,
   }) async {
+    if (!canWriteAtActiveLocation) return readOnlyMessage;
     final err = validateRequestText(text);
     if (err != null) return err;
     final loc = _locationRef;
@@ -1420,6 +1557,7 @@ class Store extends ChangeNotifier {
   }
 
   Future<String?> createPersonalTodo(String text) async {
+    if (!canWriteAtActiveLocation) return readOnlyMessage;
     final err = validateRequestText(text);
     if (err != null) return err;
     final loc = _locationRef;
@@ -1472,6 +1610,7 @@ class Store extends ChangeNotifier {
     String? completionPresetId,
     String? completionPresetLabel,
   }) async {
+    if (!canWriteAtActiveLocation) return readOnlyMessage;
     final err = validateCompletionPayload(
       note: note,
       presetLabel: completionPresetLabel,
@@ -1648,6 +1787,9 @@ class Store extends ChangeNotifier {
     }
     await _prefs?.setString(_kEmployeeProfile, jsonEncode(profile));
     await _prefs?.setString(_kActiveLocation, locationId);
+    await rememberRecentLocation(locationId);
+    employeeLoginResume = EmployeeLoginResume.none;
+    _pinUnlockedThisLaunch = false;
     _bindLocation(locationId);
     notifyListeners();
   }
@@ -2269,6 +2411,18 @@ class Store extends ChangeNotifier {
   void _onWorkersSnapshot(QuerySnapshot<Map<String, dynamic>> snap) {
     _workers =
         snap.docs.map(Worker.fromDoc).where((w) => w.name.isNotEmpty).toList();
+    if (_employeeName != null && _employeeName!.trim().isNotEmpty) {
+      final name = _employeeName!.trim().toLowerCase();
+      final onRoster =
+          _workers.any((w) => w.name.trim().toLowerCase() == name);
+      if (!onRoster) {
+        _employeeName = null;
+        _employeeLocationId = null;
+        _pinUnlockedThisLaunch = false;
+        employeeLoginResume = EmployeeLoginResume.name;
+        _prefs?.remove(_kEmployeeProfile);
+      }
+    }
     notifyListeners();
   }
 
@@ -2405,6 +2559,10 @@ class Store extends ChangeNotifier {
       debugPrint('addSubmission: no active location');
       return;
     }
+    if (!canWriteAtActiveLocation) {
+      debugPrint('addSubmission: location read-only');
+      return;
+    }
     await ref
         .collection(_kSubmissionsCol)
         .doc(submission.id)
@@ -2417,6 +2575,7 @@ class Store extends ChangeNotifier {
     required double baGoal,
     int? talkedTo,
   }) async {
+    if (!canWriteAtActiveLocation) return readOnlyMessage;
     final ref = _locationRef;
     if (ref == null) return 'No active location.';
     try {
