@@ -9,7 +9,7 @@ void main() {
         code: 'permission-denied',
         fallback: 'Could not add manager.',
       ),
-      'You do not have permission to invite managers.',
+      'You do not have permission to do that.',
     );
   });
 

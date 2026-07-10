@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/profile.dart';
+import '../screens/employee_requests_screen.dart';
 import '../services/store.dart';
 import '../theme.dart';
 
@@ -48,6 +49,21 @@ class ProfileAction extends StatelessWidget {
                   _row('Role', profile?.role.label ?? '—'),
                   if (location != null) _row('Location', location.displayName),
                   const SizedBox(height: 20),
+                  if (isEmployee || acting) ...[
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const EmployeeRequestsScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.campaign_outlined),
+                      label: const Text('Requests'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (acting)
                     ElevatedButton.icon(
                       onPressed: () {

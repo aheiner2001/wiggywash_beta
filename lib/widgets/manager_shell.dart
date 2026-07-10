@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../screens/manager_screen.dart';
+import '../screens/manager_requests_screen.dart';
 import '../screens/master_sheet_screen.dart';
 import '../screens/pricing_screen.dart';
 import '../screens/settings_screen.dart';
@@ -21,6 +22,7 @@ class _ManagerShellState extends State<ManagerShell> {
   static const _destinations = [
     (icon: Icons.dashboard_rounded, label: 'Dashboard'),
     (icon: Icons.table_chart_outlined, label: 'Master Sheet'),
+    (icon: Icons.campaign_outlined, label: 'Requests'),
     (icon: Icons.group_outlined, label: 'Team'),
     (icon: Icons.sell_outlined, label: 'Prices'),
     (icon: Icons.settings_outlined, label: 'Settings'),
@@ -29,6 +31,7 @@ class _ManagerShellState extends State<ManagerShell> {
   static const _mobileLabels = [
     'Home',
     'Sheet',
+    'Requests',
     'Team',
     'Prices',
     'Settings',
@@ -37,9 +40,10 @@ class _ManagerShellState extends State<ManagerShell> {
   Widget _page(int index) => switch (index) {
         0 => const ManagerScreen(),
         1 => const MasterSheetScreen(),
-        2 => const TeamScreen(),
-        3 => const PricingScreen(),
-        4 => const SettingsScreen(),
+        2 => const ManagerRequestsScreen(),
+        3 => const TeamScreen(),
+        4 => const PricingScreen(),
+        5 => const SettingsScreen(),
         _ => const ManagerScreen(),
       };
 
@@ -58,6 +62,29 @@ class _ManagerShellState extends State<ManagerShell> {
         );
       },
     );
+  }
+
+  Widget _requestsIcon({required bool selected}) {
+    return AnimatedBuilder(
+      animation: Store.instance,
+      builder: (context, _) {
+        final n = Store.instance.pendingStaffRequestCount;
+        final icon = Icon(
+          selected ? Icons.campaign_rounded : Icons.campaign_outlined,
+        );
+        return Badge(
+          isLabelVisible: n > 0,
+          label: Text('$n'),
+          child: icon,
+        );
+      },
+    );
+  }
+
+  Widget _destIcon(int i, {required bool selected}) {
+    if (i == 1) return _sheetIcon(selected: selected);
+    if (i == 2) return _requestsIcon(selected: selected);
+    return Icon(_destinations[i].icon);
   }
 
   @override
@@ -104,12 +131,8 @@ class _ManagerShellState extends State<ManagerShell> {
                   destinations: [
                     for (var i = 0; i < _destinations.length; i++)
                       NavigationRailDestination(
-                        icon: i == 1
-                            ? _sheetIcon(selected: false)
-                            : Icon(_destinations[i].icon),
-                        selectedIcon: i == 1
-                            ? _sheetIcon(selected: true)
-                            : Icon(_destinations[i].icon),
+                        icon: _destIcon(i, selected: false),
+                        selectedIcon: _destIcon(i, selected: true),
                         label: Text(_destinations[i].label),
                       ),
                   ],
@@ -141,12 +164,8 @@ class _ManagerShellState extends State<ManagerShell> {
               destinations: [
                 for (var i = 0; i < _destinations.length; i++)
                   NavigationDestination(
-                    icon: i == 1
-                        ? _sheetIcon(selected: false)
-                        : Icon(_destinations[i].icon),
-                    selectedIcon: i == 1
-                        ? _sheetIcon(selected: true)
-                        : Icon(_destinations[i].icon),
+                    icon: _destIcon(i, selected: false),
+                    selectedIcon: _destIcon(i, selected: true),
                     label: _mobileLabels[i],
                   ),
               ],

@@ -15,7 +15,9 @@ import '../models/company.dart';
 import '../models/location.dart';
 import '../models/manager_invite.dart';
 import '../models/profile.dart';
+import '../models/request_preset.dart';
 import '../models/scorecard_config.dart';
+import '../models/staff_request.dart';
 import '../models/submission.dart';
 import '../models/worker.dart';
 import '../theme/app_theme_id.dart';
@@ -23,6 +25,7 @@ import '../utils/brand_color.dart';
 import '../utils/dark_mode_prefs.dart';
 import '../utils/firestore_user_error.dart';
 import '../utils/manager_invite_logic.dart';
+import '../utils/staff_request_logic.dart';
 import 'company_migration.dart' as company_migration;
 
 /// Where the app should send the user right now.
@@ -139,6 +142,11 @@ class Store extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _pricesSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _settingsSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _itemsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _presetsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _staffRequestsSub;
+
+  List<RequestPreset> _requestPresets = [];
+  List<StaffRequest> _staffRequests = [];
 
   /// Raw line-item customization for the active location.
   Map<String, dynamic> _itemConfig = {};
@@ -158,6 +166,11 @@ class Store extends ChangeNotifier {
 
   /// The active team challenge for this location, if any.
   Challenge? get challenge => _challenge;
+  List<RequestPreset> get requestPresets => List.unmodifiable(_requestPresets);
+  List<StaffRequest> get staffRequests => List.unmodifiable(_staffRequests);
+  int get pendingStaffRequestCount => _staffRequests
+      .where((r) => r.status == StaffRequestStatus.pending)
+      .length;
   AppUser? get appUser => _appUser;
   String? get activeCompanyId => _activeCompanyId;
   Company? get activeCompany => _activeCompany;
@@ -1020,6 +1033,146 @@ class Store extends ChangeNotifier {
     }
   }
 
+  Future<String?> addRequestPreset(String label) async {
+    final err = validatePresetLabel(label);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    if (_requestPresets.length >= kStaffRequestPresetCap) {
+      return 'Limit of $kStaffRequestPresetCap presets reached.';
+    }
+    final me = _appUser;
+    try {
+      final nextOrder = _requestPresets.isEmpty
+          ? 0
+          : _requestPresets.map((p) => p.sortOrder).reduce((a, b) => a > b ? a : b) +
+              1;
+      await loc.collection('requestPresets').add({
+        'label': label.trim(),
+        'sortOrder': nextOrder,
+        if (me != null) 'createdByUid': me.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      debugPrint('addRequestPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not add preset.');
+    }
+  }
+
+  Future<String?> updateRequestPreset({
+    required String id,
+    required String label,
+    int? sortOrder,
+  }) async {
+    final err = validatePresetLabel(label);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    try {
+      final data = <String, dynamic>{'label': label.trim()};
+      if (sortOrder != null) data['sortOrder'] = sortOrder;
+      await loc
+          .collection('requestPresets')
+          .doc(id)
+          .set(data, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('updateRequestPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not update preset.');
+    }
+  }
+
+  Future<String?> deleteRequestPreset(String id) async {
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    try {
+      await loc.collection('requestPresets').doc(id).delete();
+      return null;
+    } catch (e) {
+      debugPrint('deleteRequestPreset error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not delete preset.');
+    }
+  }
+
+  Future<String?> createStaffRequest({
+    required String text,
+    String? presetId,
+  }) async {
+    final err = validateRequestText(text);
+    if (err != null) return err;
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    final name = profile?.name.trim() ?? '';
+    if (name.isEmpty) return 'Sign in as an employee first.';
+    try {
+      final data = <String, dynamic>{
+        'text': text.trim(),
+        'employeeName': name,
+        'employeeProfileKey': staffRequestProfileKey(name),
+        'status': StaffRequestStatus.pending.firestoreValue,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      if (presetId != null) data['presetId'] = presetId;
+      await loc.collection('staffRequests').add(data);
+      return null;
+    } catch (e) {
+      debugPrint('createStaffRequest error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not send request.');
+    }
+  }
+
+  Future<String?> _transitionStaffRequest(
+    String id,
+    StaffRequestStatus to,
+  ) async {
+    final loc = _locationRef;
+    if (loc == null) return 'No active location.';
+    StaffRequest? current;
+    for (final r in _staffRequests) {
+      if (r.id == id) current = r;
+    }
+    if (current == null) return 'Request not found.';
+    if (!canTransition(current.status, to)) {
+      return 'That status change is not allowed.';
+    }
+    final uid = _appUser?.uid;
+    try {
+      final data = <String, dynamic>{
+        'status': to.firestoreValue,
+      };
+      switch (to) {
+        case StaffRequestStatus.accepted:
+          data['acceptedAt'] = FieldValue.serverTimestamp();
+          if (uid != null) data['acceptedByUid'] = uid;
+          break;
+        case StaffRequestStatus.completed:
+          data['completedAt'] = FieldValue.serverTimestamp();
+          if (uid != null) data['completedByUid'] = uid;
+          break;
+        case StaffRequestStatus.dismissed:
+          data['dismissedAt'] = FieldValue.serverTimestamp();
+          break;
+        case StaffRequestStatus.pending:
+          break;
+      }
+      await loc.collection('staffRequests').doc(id).set(data, SetOptions(merge: true));
+      return null;
+    } catch (e) {
+      debugPrint('transitionStaffRequest error: $e');
+      return mapFirestoreUserError(e, fallback: 'Could not update request.');
+    }
+  }
+
+  Future<String?> acceptStaffRequest(String id) =>
+      _transitionStaffRequest(id, StaffRequestStatus.accepted);
+
+  Future<String?> dismissStaffRequest(String id) =>
+      _transitionStaffRequest(id, StaffRequestStatus.dismissed);
+
+  Future<String?> completeStaffRequest(String id) =>
+      _transitionStaffRequest(id, StaffRequestStatus.completed);
+
   Future<String?> approveCompany(String companyId) async {
     final admin = _appUser;
     if (admin?.role != UserRole.platformAdmin) return 'Not authorized.';
@@ -1357,10 +1510,15 @@ class Store extends ChangeNotifier {
     _pricesSub?.cancel();
     _settingsSub?.cancel();
     _itemsSub?.cancel();
+    _presetsSub?.cancel();
+    _staffRequestsSub?.cancel();
     _subsSub = _workersSub = null;
     _pricesSub = _settingsSub = _itemsSub = null;
+    _presetsSub = _staffRequestsSub = null;
     _submissions = [];
     _workers = [];
+    _requestPresets = [];
+    _staffRequests = [];
     _itemConfig = {};
     ItemBook.reset();
     SectionBook.reset();
@@ -1416,6 +1574,25 @@ class Store extends ChangeNotifier {
         .listen(_onItemsSnapshot, onError: (Object e) {
       debugPrint('items listen error: $e');
     });
+
+    _presetsSub = base
+        .collection('requestPresets')
+        .orderBy('sortOrder')
+        .snapshots()
+        .listen((snap) {
+      _requestPresets = snap.docs.map(RequestPreset.fromDoc).toList();
+      notifyListeners();
+    }, onError: (Object e) => debugPrint('requestPresets listen error: $e'));
+
+    _staffRequestsSub = base
+        .collection('staffRequests')
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots()
+        .listen((snap) {
+      _staffRequests = snap.docs.map(StaffRequest.fromDoc).toList();
+      notifyListeners();
+    }, onError: (Object e) => debugPrint('staffRequests listen error: $e'));
   }
 
   // ---- Settings (manager-controlled) ----------------------------------

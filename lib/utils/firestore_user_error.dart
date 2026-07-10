@@ -7,7 +7,7 @@ String mapFirestoreUserError(
   final c = (code ?? _codeFrom(error))?.toLowerCase();
   switch (c) {
     case 'permission-denied':
-      return 'You do not have permission to invite managers.';
+      return 'You do not have permission to do that.';
     case 'unavailable':
     case 'deadline-exceeded':
       return 'Network error — try again.';
