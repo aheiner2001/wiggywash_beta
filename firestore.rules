@@ -73,6 +73,21 @@ service cloud.firestore {
           allow read: if signedIn();
           allow write: if canManageCompany(companyId);
         }
+        match /requestPresets/{presetId} {
+          allow read: if signedIn();
+          allow create, update, delete: if canManageCompany(companyId);
+        }
+        match /staffRequests/{requestId} {
+          allow read: if signedIn();
+          allow create: if signedIn()
+            && request.resource.data.status == 'pending'
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 120
+            && request.resource.data.employeeName is string
+            && request.resource.data.employeeName.size() > 0;
+          allow update, delete: if canManageCompany(companyId);
+        }
       }
 
       match /managerInvites/{inviteId} {
