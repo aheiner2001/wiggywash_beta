@@ -24,6 +24,7 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
   _LoginStep _step = _LoginStep.companyCode;
   final _code = TextEditingController();
   final _pin = TextEditingController();
+  final _locationQuery = TextEditingController();
 
   bool _busy = false;
   String? _codeError;
@@ -38,6 +39,66 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
   void initState() {
     super.initState();
     UiDensityController.instance.addListener(_onDensityChanged);
+    _locationQuery.addListener(() {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyResume());
+  }
+
+  Future<void> _applyResume() async {
+    final store = Store.instance;
+    final resume = store.employeeLoginResume;
+    if (resume == EmployeeLoginResume.none) return;
+    final companyId = store.activeCompanyId;
+    if (companyId == null) return;
+    setState(() => _busy = true);
+    await store.previewCompany(companyId);
+    if (!mounted) return;
+    final company = store.activeCompany;
+    final locs = store.companyLocations;
+    if (company == null) {
+      setState(() => _busy = false);
+      return;
+    }
+    if (resume == EmployeeLoginResume.location) {
+      setState(() {
+        _busy = false;
+        _company = company;
+        _step = locs.length <= 1 && locs.isNotEmpty
+            ? _LoginStep.name
+            : _LoginStep.location;
+        if (locs.length == 1) {
+          _location = locs.first;
+          store.previewLocation(locs.first.id);
+        }
+      });
+      store.employeeLoginResume = EmployeeLoginResume.none;
+      return;
+    }
+    // Resume at name step — need an active location.
+    final locId = store.activeLocationId;
+    Location? loc;
+    for (final l in locs) {
+      if (l.id == locId) loc = l;
+    }
+    loc ??= locs.length == 1 ? locs.first : null;
+    if (loc == null) {
+      setState(() {
+        _busy = false;
+        _company = company;
+        _step = _LoginStep.location;
+      });
+      store.employeeLoginResume = EmployeeLoginResume.none;
+      return;
+    }
+    store.previewLocation(loc.id);
+    setState(() {
+      _busy = false;
+      _company = company;
+      _location = loc;
+      _step = _LoginStep.name;
+    });
+    store.employeeLoginResume = EmployeeLoginResume.none;
   }
 
   void _onDensityChanged() {
@@ -49,6 +110,7 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
     UiDensityController.instance.removeListener(_onDensityChanged);
     _code.dispose();
     _pin.dispose();
+    _locationQuery.dispose();
     super.dispose();
   }
 
@@ -246,6 +308,27 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
 
   Widget _buildLocationStep() {
     final locs = Store.instance.companyLocations;
+    final q = _locationQuery.text.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? locs
+        : locs
+            .where((l) =>
+                l.name.toLowerCase().contains(q) ||
+                l.city.toLowerCase().contains(q) ||
+                l.displayName.toLowerCase().contains(q))
+            .toList();
+    final recentIds = Store.instance.loadRecentLocationIds();
+    final recent = <Location>[];
+    for (final id in recentIds) {
+      for (final l in locs) {
+        if (l.id == id) {
+          recent.add(l);
+          break;
+        }
+      }
+    }
+    final showRecent = q.isEmpty && recent.isNotEmpty;
+
     return AppCard(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -267,6 +350,17 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
           const Text('Which site are you working at today?',
               style: TextStyles.caption),
           const SizedBox(height: 12),
+          if (locs.length > 5) ...[
+            TextField(
+              controller: _locationQuery,
+              decoration: const InputDecoration(
+                labelText: 'Search sites',
+                prefixIcon: Icon(Icons.search_rounded),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (locs.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
@@ -275,14 +369,37 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
                 style: TextStyles.caption,
               ),
             )
-          else
-            ...locs.map((loc) => Padding(
+          else ...[
+            if (showRecent) ...[
+              const Text('Recent', style: TextStyles.caption),
+              const SizedBox(height: 6),
+              for (final loc in recent)
+                Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _LocationTile(
                     location: loc,
                     onTap: () => _selectLocation(loc),
                   ),
-                )),
+                ),
+              const SizedBox(height: 4),
+              const Text('All sites', style: TextStyles.caption),
+              const SizedBox(height: 6),
+            ],
+            if (filtered.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No sites match that search.',
+                    style: TextStyles.caption),
+              )
+            else
+              ...filtered.map((loc) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _LocationTile(
+                      location: loc,
+                      onTap: () => _selectLocation(loc),
+                    ),
+                  )),
+          ],
         ],
       ),
     );
