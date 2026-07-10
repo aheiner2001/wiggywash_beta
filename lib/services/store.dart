@@ -2035,6 +2035,19 @@ class Store extends ChangeNotifier {
     return snap.docs.map(Location.fromDoc).toList();
   }
 
+  /// App root for Stripe return URLs. Includes GitHub Pages repo path
+  /// (e.g. `https://user.github.io/wiggywash_beta`), not just the origin.
+  static String webReturnOrigin() {
+    final u = Uri.base;
+    var path = u.path;
+    if (path.endsWith('index.html')) {
+      path = path.substring(0, path.length - 'index.html'.length);
+    }
+    if (path.isEmpty || path == '/') return u.origin;
+    if (!path.endsWith('/')) path = '$path/';
+    return '${u.origin}$path'.replaceFirst(RegExp(r'/$'), '');
+  }
+
   Future<String?> startSeatCheckout({required int quantity}) async {
     final company = _activeCompany;
     if (company == null) return 'No active company.';
@@ -2045,7 +2058,7 @@ class Store extends ChangeNotifier {
       final result = await callable.call(<String, dynamic>{
         'companyId': company.id,
         'quantity': quantity,
-        'returnOrigin': Uri.base.origin,
+        'returnOrigin': webReturnOrigin(),
       });
       final data = Map<String, dynamic>.from(result.data as Map);
       if (data['updated'] == true) {
@@ -2071,7 +2084,7 @@ class Store extends ChangeNotifier {
           FirebaseFunctions.instance.httpsCallable('createPortalSession');
       final result = await callable.call(<String, dynamic>{
         'companyId': company.id,
-        'returnOrigin': Uri.base.origin,
+        'returnOrigin': webReturnOrigin(),
       });
       final url = (result.data as Map)['url'] as String?;
       if (url == null || url.isEmpty) return 'No portal URL returned.';
