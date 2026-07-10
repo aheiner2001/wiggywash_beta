@@ -9,7 +9,9 @@ import '../widgets/store_message.dart';
 
 final _time = DateFormat('h:mm a');
 
-/// Manager board: one page with Incoming, To-do, and Presets sections.
+enum _IncomingSort { newest, name }
+
+/// Manager Requests board styled as a two-column dashboard + presets strip.
 class ManagerRequestsScreen extends StatefulWidget {
   const ManagerRequestsScreen({super.key});
 
@@ -19,11 +21,16 @@ class ManagerRequestsScreen extends StatefulWidget {
 
 class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
   final _presetLabel = TextEditingController();
+  final _presetFocus = FocusNode();
+  final _presetsKey = GlobalKey();
   bool _busy = false;
+  bool _showAllPresets = false;
+  _IncomingSort _sort = _IncomingSort.newest;
 
   @override
   void dispose() {
     _presetLabel.dispose();
+    _presetFocus.dispose();
     super.dispose();
   }
 
@@ -51,6 +58,56 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
     }
     _presetLabel.clear();
     showStoreMessage(context, 'Preset added');
+  }
+
+  Future<void> _openAddPresetDialog() async {
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add New Request'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Preset label',
+            hintText: 'Out of soap',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Add preset'),
+          ),
+        ],
+      ),
+    );
+    final text = c.text;
+    c.dispose();
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    final err = await Store.instance.addRequestPreset(text);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) {
+      showStoreMessage(context, err, error: true);
+      return;
+    }
+    showStoreMessage(context, 'Preset added');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _presetsKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _renamePreset(RequestPreset p) async {
@@ -84,225 +141,422 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
     );
   }
 
+  List<StaffRequest> _sortedIncoming(List<StaffRequest> items) {
+    final copy = [...items];
+    switch (_sort) {
+      case _IncomingSort.newest:
+        copy.sort((a, b) {
+          final at = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bt = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bt.compareTo(at);
+        });
+      case _IncomingSort.name:
+        copy.sort(
+          (a, b) => a.employeeName.toLowerCase().compareTo(
+                b.employeeName.toLowerCase(),
+              ),
+        );
+    }
+    return copy;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Requests')),
+      backgroundColor: const Color(0xFFF7F8FA),
+      appBar: AppBar(
+        title: const Text('Requests'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: TextButton.icon(
+              onPressed: _busy ? null : _openAddPresetDialog,
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: primary,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+                ),
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text(
+                'Add New Request',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: AnimatedBuilder(
         animation: Store.instance,
         builder: (context, _) {
           final all = Store.instance.staffRequests;
-          final incoming = all
-              .where((r) => r.status == StaffRequestStatus.pending)
-              .toList();
+          final incoming = _sortedIncoming(
+            all
+                .where((r) => r.status == StaffRequestStatus.pending)
+                .toList(),
+          );
           final todos = all
               .where((r) => r.status == StaffRequestStatus.accepted)
               .toList();
           final presets = Store.instance.requestPresets;
+          final visiblePresets =
+              _showAllPresets ? presets : presets.take(6).toList();
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-            children: [
-              _SectionHeader(
-                title: 'Incoming',
-                subtitle: 'New asks from the floor',
-                count: incoming.length,
-              ),
-              const SizedBox(height: 10),
-              if (incoming.isEmpty)
-                const _EmptyCard('No incoming requests')
-              else
-                for (final r in incoming) ...[
-                  _RequestCard(
-                    request: r,
-                    actions: [
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(
-                                  () =>
-                                      Store.instance.dismissStaffRequest(r.id),
-                                ),
-                        child: const Text('Dismiss'),
-                      ),
-                      ElevatedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(
-                                  () =>
-                                      Store.instance.acceptStaffRequest(r.id),
-                                  ok: 'Added to to-do',
-                                ),
-                        child: const Text('Add to to-do'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              const SizedBox(height: 20),
-              _SectionHeader(
-                title: 'To-do',
-                subtitle: 'Accepted — finish these',
-                count: todos.length,
-              ),
-              const SizedBox(height: 10),
-              if (todos.isEmpty)
-                const _EmptyCard('No open to-dos')
-              else
-                for (final r in todos) ...[
-                  _RequestCard(
-                    request: r,
-                    actions: [
-                      ElevatedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(
-                                  () => Store.instance
-                                      .completeStaffRequest(r.id),
-                                  ok: 'Marked complete',
-                                ),
-                        child: const Text('Mark complete'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              const SizedBox(height: 20),
-              _SectionHeader(
-                title: 'Presets',
-                subtitle: 'Chips employees can tap',
-                count: presets.length,
-              ),
-              const SizedBox(height: 10),
-              AppCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: _presetLabel,
-                      decoration: const InputDecoration(
-                        labelText: 'New preset label',
-                        hintText: 'Out of soap',
-                        isDense: true,
-                      ),
-                      onSubmitted: (_) => _addPresetFromField(),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _addPresetFromField(),
-                      child: const Text('Add preset'),
-                    ),
-                  ],
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                  wide ? 28 : 16,
+                  20,
+                  wide ? 28 : 16,
+                  40,
                 ),
-              ),
-              const SizedBox(height: 10),
-              if (presets.isEmpty)
-                const _EmptyCard('Add presets employees can tap')
-              else
-                for (final p in presets) ...[
-                  AppCard(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
+                children: [
+                  if (wide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: Text(p.label, style: TextStyles.body)),
-                        IconButton(
-                          tooltip: 'Edit',
-                          onPressed: _busy ? null : () => _renamePreset(p),
-                          icon: const Icon(Icons.edit_outlined),
-                        ),
-                        IconButton(
-                          tooltip: 'Delete',
-                          onPressed: _busy
-                              ? null
-                              : () => _run(
-                                    () => Store.instance
-                                        .deleteRequestPreset(p.id),
+                        Expanded(
+                          child: _BoardColumn(
+                            title: 'Incoming',
+                            subtitle: 'New asks from the floor',
+                            count: incoming.length,
+                            trailingHeader: _SortFilterButton(
+                              sort: _sort,
+                              onChanged: (s) => setState(() => _sort = s),
+                            ),
+                            child: incoming.isEmpty
+                                ? const _EmptyPanel(
+                                    icon: Icons.inbox_outlined,
+                                    message: 'No incoming requests',
+                                  )
+                                : Column(
+                                    children: [
+                                      for (final r in incoming) ...[
+                                        _RequestTile(
+                                          request: r,
+                                          actions: _incomingActions(r),
+                                        ),
+                                        const SizedBox(height: 10),
+                                      ],
+                                    ],
                                   ),
-                          icon: const Icon(Icons.delete_outline),
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        Expanded(
+                          child: _BoardColumn(
+                            title: 'To-do',
+                            subtitle: 'Accepted — finish these',
+                            count: todos.length,
+                            child: todos.isEmpty
+                                ? const _EmptyPanel(
+                                    icon: Icons.checklist_rtl_rounded,
+                                    message: 'No open to-dos',
+                                  )
+                                : Column(
+                                    children: [
+                                      for (final r in todos) ...[
+                                        _RequestTile(
+                                          request: r,
+                                          actions: _todoActions(r),
+                                        ),
+                                        const SizedBox(height: 10),
+                                      ],
+                                    ],
+                                  ),
+                          ),
                         ),
                       ],
+                    )
+                  else ...[
+                    _BoardColumn(
+                      title: 'Incoming',
+                      subtitle: 'New asks from the floor',
+                      count: incoming.length,
+                      trailingHeader: _SortFilterButton(
+                        sort: _sort,
+                        onChanged: (s) => setState(() => _sort = s),
+                      ),
+                      child: incoming.isEmpty
+                          ? const _EmptyPanel(
+                              icon: Icons.inbox_outlined,
+                              message: 'No incoming requests',
+                            )
+                          : Column(
+                              children: [
+                                for (final r in incoming) ...[
+                                  _RequestTile(
+                                    request: r,
+                                    actions: _incomingActions(r),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 20),
+                    _BoardColumn(
+                      title: 'To-do',
+                      subtitle: 'Accepted — finish these',
+                      count: todos.length,
+                      child: todos.isEmpty
+                          ? const _EmptyPanel(
+                              icon: Icons.checklist_rtl_rounded,
+                              message: 'No open to-dos',
+                            )
+                          : Column(
+                              children: [
+                                for (final r in todos) ...[
+                                  _RequestTile(
+                                    request: r,
+                                    actions: _todoActions(r),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+                              ],
+                            ),
+                    ),
+                  ],
+                  const SizedBox(height: 28),
+                  KeyedSubtree(
+                    key: _presetsKey,
+                    child: _PresetsSection(
+                      count: presets.length,
+                      controller: _presetLabel,
+                      focusNode: _presetFocus,
+                      busy: _busy,
+                      presets: visiblePresets,
+                      showSeeAll: presets.length > 6 && !_showAllPresets,
+                      onSeeAll: () => setState(() => _showAllPresets = true),
+                      onAdd: _busy ? null : _addPresetFromField,
+                      onRename: _busy ? null : _renamePreset,
+                      onDelete: _busy
+                          ? null
+                          : (id) => _run(
+                                () => Store.instance.deleteRequestPreset(id),
+                              ),
                     ),
                   ),
-                  const SizedBox(height: 8),
                 ],
-            ],
+              );
+            },
           );
         },
       ),
     );
   }
+
+  List<Widget> _incomingActions(StaffRequest r) => [
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => _run(() => Store.instance.dismissStaffRequest(r.id)),
+          child: const Text('Dismiss'),
+        ),
+        FilledButton(
+          onPressed: _busy
+              ? null
+              : () => _run(
+                    () => Store.instance.acceptStaffRequest(r.id),
+                    ok: 'Added to to-do',
+                  ),
+          child: const Text('Add to to-do'),
+        ),
+      ];
+
+  List<Widget> _todoActions(StaffRequest r) => [
+        FilledButton(
+          onPressed: _busy
+              ? null
+              : () => _run(
+                    () => Store.instance.completeStaffRequest(r.id),
+                    ok: 'Marked complete',
+                  ),
+          child: const Text('Mark complete'),
+        ),
+      ];
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
+class _SortFilterButton extends StatelessWidget {
+  const _SortFilterButton({required this.sort, required this.onChanged});
+
+  final _IncomingSort sort;
+  final ValueChanged<_IncomingSort> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_IncomingSort>(
+      initialValue: sort,
+      onSelected: onChanged,
+      tooltip: 'Sort / Filter',
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _IncomingSort.newest,
+          child: Text('Newest first'),
+        ),
+        PopupMenuItem(
+          value: _IncomingSort.name,
+          child: Text('By name'),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFD8DEE8)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Sort / Filter',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(width: 4),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BoardColumn extends StatelessWidget {
+  const _BoardColumn({
     required this.title,
     required this.subtitle,
     required this.count,
+    required this.child,
+    this.trailingHeader,
   });
 
   final String title;
   final String subtitle;
   final int count;
+  final Widget child;
+  final Widget? trailingHeader;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: TextStyles.subheading),
-              const SizedBox(height: 2),
-              Text(subtitle, style: TextStyles.caption),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Theme.of(context).colorScheme.primary,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _CountBadge(count),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: TextStyles.caption),
+                ],
+              ),
             ),
+            ?trailingHeader,
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          constraints: const BoxConstraints(minHeight: 240),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F5F8),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E7EF)),
           ),
+          child: child,
         ),
       ],
     );
   }
 }
 
-class _EmptyCard extends StatelessWidget {
-  const _EmptyCard(this.message);
-  final String message;
+class _CountBadge extends StatelessWidget {
+  const _CountBadge(this.count);
+  final int count;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+    return Container(
+      constraints: const BoxConstraints(minWidth: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8ECF2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      alignment: Alignment.center,
       child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: TextStyles.caption,
+        '$count',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textMuted,
+        ),
       ),
     );
   }
 }
 
-class _RequestCard extends StatelessWidget {
-  const _RequestCard({required this.request, required this.actions});
+class _EmptyPanel extends StatelessWidget {
+  const _EmptyPanel({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 56, color: const Color(0xFFC5CDD8)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RequestTile extends StatelessWidget {
+  const _RequestTile({required this.request, required this.actions});
 
   final StaffRequest request;
   final List<Widget> actions;
@@ -311,23 +565,251 @@ class _RequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final when =
         request.createdAt != null ? _time.format(request.createdAt!) : '';
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              request.text,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${request.employeeName}${when.isEmpty ? '' : ' · $when'}',
+              style: TextStyles.caption,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: actions,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PresetsSection extends StatelessWidget {
+  const _PresetsSection({
+    required this.count,
+    required this.controller,
+    required this.focusNode,
+    required this.busy,
+    required this.presets,
+    required this.showSeeAll,
+    required this.onSeeAll,
+    required this.onAdd,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final int count;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool busy;
+  final List<RequestPreset> presets;
+  final bool showSeeAll;
+  final VoidCallback onSeeAll;
+  final VoidCallback? onAdd;
+  final Future<void> Function(RequestPreset p)? onRename;
+  final Future<void> Function(String id)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Presets',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _CountBadge(count),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Chips employees can tap',
+          style: TextStyles.caption,
+        ),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final sideBySide = constraints.maxWidth >= 720;
+            final addCard = Material(
+              color: Colors.white,
+              elevation: 1,
+              shadowColor: const Color(0x14000000),
+              borderRadius: BorderRadius.circular(14),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        hintText: 'New preset label',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: primary.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: primary.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ),
+                      onSubmitted: (_) => onAdd?.call(),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: onAdd,
+                      child: const Text('Add preset'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+            final chips = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (presets.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No presets yet',
+                      style: TextStyles.caption,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final p in presets)
+                        _PresetChip(
+                          label: p.label,
+                          onEdit:
+                              onRename == null ? null : () => onRename!(p),
+                          onDelete:
+                              onDelete == null ? null : () => onDelete!(p.id),
+                        ),
+                    ],
+                  ),
+                if (showSeeAll) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: onSeeAll,
+                      child: const Text('See all presets'),
+                    ),
+                  ),
+                ],
+              ],
+            );
+
+            if (!sideBySide) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  addCard,
+                  const SizedBox(height: 14),
+                  chips,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 260, child: addCard),
+                const SizedBox(width: 16),
+                Expanded(child: chips),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final String label;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8ECF2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(request.text, style: TextStyles.subheading),
-          const SizedBox(height: 4),
-          Text(
-            '${request.employeeName}${when.isEmpty ? '' : ' · $when'}',
-            style: TextStyles.caption,
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 8,
-            runSpacing: 8,
-            children: actions,
+          IconButton(
+            tooltip: 'Edit',
+            visualDensity: VisualDensity.compact,
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+          ),
+          IconButton(
+            tooltip: 'Delete',
+            visualDensity: VisualDensity.compact,
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline, size: 18),
           ),
         ],
       ),
