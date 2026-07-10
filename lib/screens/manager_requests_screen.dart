@@ -39,6 +39,20 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
     }
   }
 
+  Future<void> _addPresetFromField() async {
+    final label = _presetLabel.text;
+    setState(() => _busy = true);
+    final err = await Store.instance.addRequestPreset(label);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) {
+      showStoreMessage(context, err, error: true);
+      return;
+    }
+    _presetLabel.clear();
+    showStoreMessage(context, 'Preset added');
+  }
+
   Future<void> _renamePreset(RequestPreset p) async {
     final c = TextEditingController(text: p.label);
     final ok = await showDialog<bool>(
@@ -172,39 +186,13 @@ class _ManagerRequestsScreenState extends State<ManagerRequestsScreen> {
                         hintText: 'Out of soap',
                         isDense: true,
                       ),
-                      onSubmitted: (_) async {
-                        final label = _presetLabel.text;
-                        setState(() => _busy = true);
-                        final err =
-                            await Store.instance.addRequestPreset(label);
-                        if (!mounted) return;
-                        setState(() => _busy = false);
-                        if (err != null) {
-                          showStoreMessage(context, err, error: true);
-                          return;
-                        }
-                        _presetLabel.clear();
-                        showStoreMessage(context, 'Preset added');
-                      },
+                      onSubmitted: (_) => _addPresetFromField(),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton(
                       onPressed: _busy
                           ? null
-                          : () async {
-                              final label = _presetLabel.text;
-                              setState(() => _busy = true);
-                              final err = await Store.instance
-                                  .addRequestPreset(label);
-                              if (!mounted) return;
-                              setState(() => _busy = false);
-                              if (err != null) {
-                                showStoreMessage(context, err, error: true);
-                                return;
-                              }
-                              _presetLabel.clear();
-                              showStoreMessage(context, 'Preset added');
-                            },
+                          : () => _addPresetFromField(),
                       child: const Text('Add preset'),
                     ),
                   ],
