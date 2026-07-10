@@ -1,7 +1,7 @@
 # Stripe Quarterly Billing + Comp Seats — Design Spec
 
 **Date:** 2026-07-10  
-**Status:** Approved (pending user review of written spec)  
+**Status:** Approved  
 **Surface:** Flutter web; Firebase (Firestore + Cloud Functions); Stripe Checkout + Customer Portal  
 **Depends on:** [Sticky Login + Per-Location Billing](./2026-07-10-sticky-login-location-billing-design.md) entitlement fields (`purchasedSeats`, `accessStatus`, read-only gates)
 
