@@ -3,9 +3,10 @@ import 'package:wiggywash/models/location_access.dart';
 import 'package:wiggywash/utils/location_entitlement.dart';
 
 void main() {
-  test('active and trial allow writes', () {
+  test('active, trial, and comp allow writes', () {
     expect(locationAllowsWrites(LocationAccessStatus.active), isTrue);
     expect(locationAllowsWrites(LocationAccessStatus.trial), isTrue);
+    expect(locationAllowsWrites(LocationAccessStatus.comp), isTrue);
   });
 
   test('readOnly blocks writes', () {
@@ -20,19 +21,32 @@ void main() {
     );
   });
 
-  test('seatUsed counts active and trial only', () {
+  test('effectiveAccess leaves comp unchanged', () {
+    expect(
+      effectiveAccess(LocationAccessStatus.comp),
+      LocationAccessStatus.comp,
+    );
+  });
+
+  test('seatsUsed counts active only', () {
     expect(
       seatsUsed([
         LocationAccessStatus.active,
         LocationAccessStatus.trial,
+        LocationAccessStatus.comp,
         LocationAccessStatus.readOnly,
       ]),
-      2,
+      1,
     );
   });
 
   test('canActivateAnother is false when at capacity', () {
     expect(canActivateAnother(purchasedSeats: 2, seatsUsed: 2), isFalse);
     expect(canActivateAnother(purchasedSeats: 2, seatsUsed: 1), isTrue);
+  });
+
+  test('isOverAllocated when used exceeds purchased', () {
+    expect(isOverAllocated(purchasedSeats: 2, seatsUsed: 3), isTrue);
+    expect(isOverAllocated(purchasedSeats: 2, seatsUsed: 2), isFalse);
   });
 }
