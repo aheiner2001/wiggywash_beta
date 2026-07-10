@@ -5,6 +5,7 @@ import '../screens/master_sheet_screen.dart';
 import '../screens/pricing_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/team_screen.dart';
+import '../services/store.dart';
 
 /// Manager navigation — sidebar on desktop, bottom bar on mobile.
 class ManagerShell extends StatefulWidget {
@@ -25,6 +26,14 @@ class _ManagerShellState extends State<ManagerShell> {
     (icon: Icons.settings_outlined, label: 'Settings'),
   ];
 
+  static const _mobileLabels = [
+    'Home',
+    'Sheet',
+    'Team',
+    'Prices',
+    'Settings',
+  ];
+
   Widget _page(int index) => switch (index) {
         0 => const ManagerScreen(),
         1 => const MasterSheetScreen(),
@@ -33,6 +42,23 @@ class _ManagerShellState extends State<ManagerShell> {
         4 => const SettingsScreen(),
         _ => const ManagerScreen(),
       };
+
+  Widget _sheetIcon({required bool selected}) {
+    return AnimatedBuilder(
+      animation: Store.instance,
+      builder: (context, _) {
+        final pending = Store.instance.pendingSubmissions.length;
+        final icon = Icon(
+          selected ? Icons.table_chart_rounded : Icons.table_chart_outlined,
+        );
+        return Badge(
+          isLabelVisible: pending > 0,
+          label: Text('$pending'),
+          child: icon,
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,10 +102,15 @@ class _ManagerShellState extends State<ManagerShell> {
                     fontWeight: FontWeight.w700,
                   ),
                   destinations: [
-                    for (final d in _destinations)
+                    for (var i = 0; i < _destinations.length; i++)
                       NavigationRailDestination(
-                        icon: Icon(d.icon),
-                        label: Text(d.label),
+                        icon: i == 1
+                            ? _sheetIcon(selected: false)
+                            : Icon(_destinations[i].icon),
+                        selectedIcon: i == 1
+                            ? _sheetIcon(selected: true)
+                            : Icon(_destinations[i].icon),
+                        label: Text(_destinations[i].label),
                       ),
                   ],
                 ),
@@ -107,27 +138,17 @@ class _ManagerShellState extends State<ManagerShell> {
               selectedIndex: _index,
               onDestinationSelected: (i) => setState(() => _index = i),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.dashboard_rounded),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.table_chart_outlined),
-                  label: 'Sheet',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.group_outlined),
-                  label: 'Team',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.sell_outlined),
-                  label: 'Prices',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  label: 'Settings',
-                ),
+              destinations: [
+                for (var i = 0; i < _destinations.length; i++)
+                  NavigationDestination(
+                    icon: i == 1
+                        ? _sheetIcon(selected: false)
+                        : Icon(_destinations[i].icon),
+                    selectedIcon: i == 1
+                        ? _sheetIcon(selected: true)
+                        : Icon(_destinations[i].icon),
+                    label: _mobileLabels[i],
+                  ),
               ],
             ),
           ),
