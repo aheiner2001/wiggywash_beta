@@ -60,6 +60,7 @@ class Company {
     String? companyCode,
     CompanyStatus? status,
     String? logoUrl,
+    bool clearLogoUrl = false,
     String? primaryColor,
     bool clearPrimaryColor = false,
     String? themeId,
@@ -77,7 +78,7 @@ class Company {
         name: name ?? this.name,
         companyCode: companyCode ?? this.companyCode,
         status: status ?? this.status,
-        logoUrl: logoUrl ?? this.logoUrl,
+        logoUrl: clearLogoUrl ? null : (logoUrl ?? this.logoUrl),
         primaryColor:
             clearPrimaryColor ? null : (primaryColor ?? this.primaryColor),
         themeId: themeId ?? this.themeId,

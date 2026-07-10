@@ -31,19 +31,22 @@ class _CompanyLoginScreenState extends State<CompanyLoginScreen> {
   Location? _location;
   Worker? _selected;
   String? _pinError;
-  UiDensity _density = UiDensity.comfortable;
+
+  UiDensity get _density => UiDensityController.instance.density;
 
   @override
   void initState() {
     super.initState();
-    UiDensityPrefs.load().then((p) {
-      if (!mounted) return;
-      setState(() => _density = p.density);
-    });
+    UiDensityController.instance.addListener(_onDensityChanged);
+  }
+
+  void _onDensityChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    UiDensityController.instance.removeListener(_onDensityChanged);
     _code.dispose();
     _pin.dispose();
     super.dispose();

@@ -10,6 +10,7 @@ import 'screens/scorecard_screen.dart';
 import 'screens/company_login_screen.dart';
 import 'services/store.dart';
 import 'theme.dart';
+import 'utils/ui_density.dart';
 import 'widgets/brand_header.dart';
 
 Future<void> main() async {
@@ -24,6 +25,7 @@ Future<void> main() async {
     debugPrint('Firebase unavailable: $e');
   }
   await Store.instance.init();
+  await UiDensityController.instance.load();
   runApp(const WiggyWashApp());
 }
 
@@ -33,10 +35,14 @@ class WiggyWashApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Store.instance,
+      animation: Listenable.merge([
+        Store.instance,
+        UiDensityController.instance,
+      ]),
       builder: (context, _) {
         final themeId =
             AppThemeIdX.parse(Store.instance.activeCompany?.themeId);
+        final density = UiDensityController.instance.density;
         return MaterialApp(
           title: 'Wiggy Wash',
           debugShowCheckedModeBanner: false,
@@ -44,6 +50,15 @@ class WiggyWashApp extends StatelessWidget {
             themeId: themeId,
             dark: false,
           ),
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: TextScaler.linear(density.textScale),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const _Root(),
         );
       },

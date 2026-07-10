@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../utils/ui_density.dart';
+import '../widgets/company_header.dart';
 import '../widgets/store_message.dart';
 
-/// Manager appearance settings — density, themes, dark mode, review link.
+/// Manager appearance settings — density, themes, branding, review link.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -16,31 +17,41 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _themeBusy = false;
   bool _reviewBusy = false;
+  bool _brandBusy = false;
   final _reviewUrl = TextEditingController();
-  UiDensity _density = UiDensity.comfortable;
+  final _companyName = TextEditingController();
+  final _logoUrl = TextEditingController();
   bool _densityBusy = false;
   AppThemeId _themeId = AppThemeId.classic;
+
+  UiDensity get _density => UiDensityController.instance.density;
 
   @override
   void initState() {
     super.initState();
-    _themeId = AppThemeIdX.parse(Store.instance.activeCompany?.themeId);
-    _reviewUrl.text = Store.instance.activeCompany?.googleReviewUrl ?? '';
-    UiDensityPrefs.load().then((p) {
-      if (!mounted) return;
-      setState(() => _density = p.density);
-    });
+    final company = Store.instance.activeCompany;
+    _themeId = AppThemeIdX.parse(company?.themeId);
+    _reviewUrl.text = company?.googleReviewUrl ?? '';
+    _companyName.text = company?.name ?? '';
+    _logoUrl.text = company?.logoUrl ?? '';
+    UiDensityController.instance.addListener(_onDensityChanged);
+  }
+
+  void _onDensityChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _setDensity(UiDensity d) async {
-    setState(() {
-      _density = d;
-      _densityBusy = true;
-    });
-    await UiDensityPrefs.save(UiDensityPrefs(density: d));
+    setState(() => _densityBusy = true);
+    await UiDensityController.instance.setDensity(d);
     if (!mounted) return;
     setState(() => _densityBusy = false);
-    showStoreMessage(context, 'Density saved on this device');
+    showStoreMessage(
+      context,
+      d == UiDensity.compact
+          ? 'Compact — more fits on screen'
+          : 'Comfortable — larger controls',
+    );
   }
 
   Future<void> _setTheme(AppThemeId id) async {
@@ -63,9 +74,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _saveBranding() async {
+    setState(() => _brandBusy = true);
+    final nameErr =
+        await Store.instance.updateCompanyName(_companyName.text);
+    if (!mounted) return;
+    if (nameErr != null) {
+      setState(() => _brandBusy = false);
+      showStoreMessage(context, nameErr, error: true);
+      return;
+    }
+    final logoErr =
+        await Store.instance.updateCompanyLogoUrl(_logoUrl.text);
+    if (!mounted) return;
+    setState(() => _brandBusy = false);
+    if (logoErr == null) {
+      _logoUrl.text = Store.instance.activeCompany?.logoUrl ?? '';
+      _companyName.text = Store.instance.activeCompany?.name ?? '';
+    }
+    showStoreMessage(
+      context,
+      logoErr ?? 'Company branding saved',
+      error: logoErr != null,
+    );
+  }
+
   @override
   void dispose() {
+    UiDensityController.instance.removeListener(_onDensityChanged);
     _reviewUrl.dispose();
+    _companyName.dispose();
+    _logoUrl.dispose();
     super.dispose();
   }
 
@@ -90,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final company = Store.instance.activeCompany;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: Center(
@@ -103,10 +143,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const Text('Company branding', style: TextStyles.subheading),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Name and logo shown when employees log in with your company code.',
+                      style: TextStyles.caption,
+                    ),
+                    const SizedBox(height: 14),
+                    if (company != null) ...[
+                      CompanyHeader(company: company, height: 64),
+                      const SizedBox(height: 16),
+                    ],
+                    TextField(
+                      controller: _companyName,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Company name',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _logoUrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Logo image URL',
+                        hintText: 'https://…/logo.png',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _brandBusy ? null : _saveBranding,
+                      child: _brandBusy
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Save branding'),
+                    ),
+                    TextButton(
+                      onPressed: _brandBusy
+                          ? null
+                          : () async {
+                              _logoUrl.clear();
+                              setState(() => _brandBusy = true);
+                              final err = await Store.instance
+                                  .updateCompanyLogoUrl('');
+                              if (!mounted) return;
+                              setState(() => _brandBusy = false);
+                              showStoreMessage(
+                                this.context,
+                                err ?? 'Logo cleared — initials will show',
+                                error: err != null,
+                              );
+                            },
+                      child: const Text('Clear logo'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              AppCard(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                     const Text('Display density', style: TextStyles.subheading),
                     const SizedBox(height: 6),
                     const Text(
-                      'Comfortable or Compact for dashboard, scorecard, and login on this device. Master Sheet density stays separate.',
+                      'Compact zooms the UI slightly and tightens spacing so more fits on this device. Master Sheet density stays separate.',
                       style: TextStyles.caption,
                     ),
                     const SizedBox(height: 14),

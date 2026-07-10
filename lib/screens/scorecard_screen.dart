@@ -3,8 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
-
 import '../models/profile.dart';
 import '../models/scorecard_config.dart';
 import '../models/submission.dart';
@@ -21,6 +19,7 @@ import '../widgets/store_message.dart';
 import '../widgets/tally_row.dart';
 import '../widgets/ui_kit.dart';
 import 'employee_requests_screen.dart';
+import 'scorecard_share_preview_screen.dart';
 import 'tips_screen.dart';
 import 'reports_screen.dart';
 
@@ -51,8 +50,9 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   bool _seeded = false;
   bool _hadDraft = false;
   Timer? _flashTimer;
-  UiDensity _density = UiDensity.comfortable;
   int _unseenAssignments = 0;
+
+  UiDensity get _density => UiDensityController.instance.density;
 
   /// Deterministic id so every Save during a shift updates the *same* running
   /// record for this employee on this day (instead of creating duplicates).
@@ -72,11 +72,12 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     _seed();
     if (!_seeded) Store.instance.addListener(_seedWhenReady);
     Store.instance.addListener(_refreshUnseenAssignments);
-    UiDensityPrefs.load().then((p) {
-      if (!mounted) return;
-      setState(() => _density = p.density);
-    });
+    UiDensityController.instance.addListener(_onDensityChanged);
     _refreshUnseenAssignments();
+  }
+
+  void _onDensityChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _refreshUnseenAssignments() async {
@@ -175,6 +176,7 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
     _flashTimer?.cancel();
     Store.instance.removeListener(_seedWhenReady);
     Store.instance.removeListener(_refreshUnseenAssignments);
+    UiDensityController.instance.removeListener(_onDensityChanged);
     _baGoal.dispose();
     super.dispose();
   }
@@ -275,19 +277,14 @@ class _ScorecardScreenState extends State<ScorecardScreen> {
   }
 
   void _shareToBaChat() {
-    final s = _live;
-    final text = (StringBuffer()
-          ..writeln('🚗 WIGGY WASH — Scorecard')
-          ..writeln(widget.profile.name)
-          ..writeln('')
-          ..writeln('Memberships: ${s.totalMemberships}')
-          ..writeln('Single washes: ${s.totalSingleWashes}')
-          ..writeln('Shop sales: ${s.totalShopSales}')
-          ..writeln(
-              'BA: ${s.conversionRate.toStringAsFixed(0)}% (goal ${s.baGoal.toStringAsFixed(0)}%)')
-          ..writeln('Total revenue: ${_money.format(s.grandTotalRevenue)}'))
-        .toString();
-    Share.share(text);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScorecardSharePreviewScreen(
+          employeeName: widget.profile.name,
+          submission: _live,
+        ),
+      ),
+    );
   }
 
   @override

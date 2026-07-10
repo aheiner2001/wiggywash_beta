@@ -982,6 +982,72 @@ class Store extends ChangeNotifier {
     }
   }
 
+  /// Updates the company display name shown on employee login.
+  Future<String?> updateCompanyName(String raw) async {
+    final id = _activeCompanyId;
+    if (id == null) return 'No active company.';
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Enter a company name.';
+    if (trimmed.length > 80) return 'Name is too long (max 80 characters).';
+    try {
+      await _companiesCol.doc(id).set(
+        {'name': trimmed},
+        SetOptions(merge: true),
+      );
+      if (_activeCompany != null) {
+        _activeCompany = _activeCompany!.copyWith(name: trimmed);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('updateCompanyName error: $e');
+      return 'Could not save company name.';
+    }
+  }
+
+  /// Saves or clears the company logo URL shown on employee login.
+  Future<String?> updateCompanyLogoUrl(String? raw) async {
+    final id = _activeCompanyId;
+    if (id == null) return 'No active company.';
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      try {
+        await _companiesCol.doc(id).set(
+          {'logoUrl': FieldValue.delete()},
+          SetOptions(merge: true),
+        );
+        if (_activeCompany != null) {
+          _activeCompany = _activeCompany!.copyWith(clearLogoUrl: true);
+        }
+        notifyListeners();
+        return null;
+      } catch (e) {
+        debugPrint('updateCompanyLogoUrl clear error: $e');
+        return 'Could not clear logo.';
+      }
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return 'Enter a full https:// image URL.';
+    }
+    try {
+      await _companiesCol.doc(id).set(
+        {'logoUrl': trimmed},
+        SetOptions(merge: true),
+      );
+      if (_activeCompany != null) {
+        _activeCompany = _activeCompany!.copyWith(logoUrl: trimmed);
+      }
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('updateCompanyLogoUrl error: $e');
+      return 'Could not save logo.';
+    }
+  }
+
   /// Saves or clears the company Google review URL used for the QR dialog.
   Future<String?> updateCompanyGoogleReviewUrl(String? raw) async {
     final id = _activeCompanyId;
