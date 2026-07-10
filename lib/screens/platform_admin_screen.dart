@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/company.dart';
+import '../models/location.dart';
+import '../models/location_access.dart';
 import '../services/store.dart';
 import '../theme.dart';
 import '../widgets/profile_menu.dart';
@@ -154,6 +156,7 @@ class _CompanyCard extends StatefulWidget {
 
 class _CompanyCardState extends State<_CompanyCard> {
   int _locationCount = 0;
+  List<Location> _locations = [];
   late final TextEditingController _seats;
   bool _seatsBusy = false;
 
@@ -163,7 +166,7 @@ class _CompanyCardState extends State<_CompanyCard> {
     _seats = TextEditingController(
       text: '${widget.company.purchasedSeats}',
     );
-    _loadCount();
+    _loadLocations();
   }
 
   @override
@@ -171,6 +174,9 @@ class _CompanyCardState extends State<_CompanyCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.company.purchasedSeats != widget.company.purchasedSeats) {
       _seats.text = '${widget.company.purchasedSeats}';
+    }
+    if (oldWidget.company.id != widget.company.id) {
+      _loadLocations();
     }
   }
 
@@ -180,10 +186,14 @@ class _CompanyCardState extends State<_CompanyCard> {
     super.dispose();
   }
 
-  Future<void> _loadCount() async {
-    final n =
-        await Store.instance.locationCountForCompany(widget.company.id);
-    if (mounted) setState(() => _locationCount = n);
+  Future<void> _loadLocations() async {
+    final list =
+        await Store.instance.locationsForCompany(widget.company.id);
+    if (!mounted) return;
+    setState(() {
+      _locations = list;
+      _locationCount = list.length;
+    });
   }
 
   Future<void> _saveSeats() async {
@@ -204,6 +214,23 @@ class _CompanyCardState extends State<_CompanyCard> {
       err ?? 'Seats updated to $n',
       error: err != null,
     );
+  }
+
+  Future<void> _setLocAccess(Location loc, LocationAccessStatus status) async {
+    final err = await Store.instance.adminSetLocationAccessStatus(
+      companyId: widget.company.id,
+      locationId: loc.id,
+      status: status,
+    );
+    if (!mounted) return;
+    showStoreMessage(
+      context,
+      err ?? '${loc.displayName} → ${status.label}',
+      error: err != null,
+    );
+    if (err == null) {
+      await _loadLocations();
+    }
   }
 
   Future<void> _approve() async {
@@ -328,6 +355,38 @@ class _CompanyCardState extends State<_CompanyCard> {
               ),
             ],
           ),
+          if (_locations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Location access', style: TextStyles.caption),
+            const SizedBox(height: 6),
+            for (final loc in _locations)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        loc.displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    DropdownButton<LocationAccessStatus>(
+                      value: loc.accessStatus,
+                      items: [
+                        for (final s in LocationAccessStatus.values)
+                          DropdownMenuItem(
+                            value: s,
+                            child: Text(s.label),
+                          ),
+                      ],
+                      onChanged: (s) {
+                        if (s != null) _setLocAccess(loc, s);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+          ],
           if (c.rejectionReason != null && c.rejectionReason!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Reason: ${c.rejectionReason}', style: TextStyles.caption),
