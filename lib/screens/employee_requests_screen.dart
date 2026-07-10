@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/staff_request.dart';
 import '../services/store.dart';
 import '../theme.dart';
+import '../utils/staff_request_clear_prefs.dart';
 import '../utils/staff_request_logic.dart';
 import '../widgets/store_message.dart';
 
@@ -18,12 +19,60 @@ class EmployeeRequestsScreen extends StatefulWidget {
 class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _custom = TextEditingController();
   final _lastTapByPreset = <String, DateTime>{};
+  final _clearedIds = <String>{};
   bool _busy = false;
+  bool _clearedLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCleared();
+  }
 
   @override
   void dispose() {
     _custom.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadCleared() async {
+    final loc = Store.instance.activeLocationId ?? '';
+    final name = Store.instance.profile?.name ?? '';
+    final key = staffRequestProfileKey(name);
+    final ids = await StaffRequestClearPrefs.load(
+      locationId: loc,
+      profileKey: key,
+    );
+    if (!mounted) return;
+    setState(() {
+      _clearedIds
+        ..clear()
+        ..addAll(ids);
+      _clearedLoaded = true;
+    });
+  }
+
+  Future<void> _clearFinished(List<StaffRequest> mine) async {
+    final finished = mine
+        .where((r) => r.status == StaffRequestStatus.completed)
+        .map((r) => r.id)
+        .toList();
+    if (finished.isEmpty) return;
+    final loc = Store.instance.activeLocationId ?? '';
+    final name = Store.instance.profile?.name ?? '';
+    final key = staffRequestProfileKey(name);
+    setState(() => _busy = true);
+    await StaffRequestClearPrefs.addIds(
+      locationId: loc,
+      profileKey: key,
+      ids: finished,
+    );
+    if (!mounted) return;
+    setState(() {
+      _clearedIds.addAll(finished);
+      _busy = false;
+    });
+    showStoreMessage(context, 'Cleared finished requests');
   }
 
   Future<void> _send({required String text, String? presetId}) async {
@@ -62,12 +111,16 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           final presets = Store.instance.requestPresets;
           final mine = Store.instance.staffRequests.where((r) {
             if (r.status == StaffRequestStatus.dismissed) return false;
+            if (_clearedIds.contains(r.id)) return false;
             if (r.employeeProfileKey != null &&
                 r.employeeProfileKey!.isNotEmpty) {
               return r.employeeProfileKey == key;
             }
             return r.employeeName.trim().toLowerCase() == key;
           }).toList();
+          final finishedCount = mine
+              .where((r) => r.status == StaffRequestStatus.completed)
+              .length;
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -142,7 +195,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Your requests', style: TextStyles.subheading),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Your requests', style: TextStyles.subheading),
+                  ),
+                  if (_clearedLoaded && finishedCount > 0)
+                    TextButton(
+                      onPressed: _busy ? null : () => _clearFinished(mine),
+                      child: const Text('Clear finished'),
+                    ),
+                ],
+              ),
               const SizedBox(height: 8),
               if (mine.isEmpty)
                 const Padding(
