@@ -1,7 +1,7 @@
 # Portfolio README + Cleaned Screenshots — Design Spec
 
 **Date:** 2026-07-11  
-**Status:** Approved (pending user review of written spec)  
+**Status:** Approved  
 **Surface:** GitHub repository `wiggywash_beta` — root `README.md` + `docs/portfolio/` assets  
 
 ## Summary
